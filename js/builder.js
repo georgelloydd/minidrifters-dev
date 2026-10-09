@@ -20,7 +20,7 @@ const withSeed = (d, i) => Object.assign({}, d, { seed: d.seed || (i * 977 + 13)
 async function BLD_init() {
   const p = await loadPublished(); BLD.pub = p.list; let drafts = null; try { drafts = JSON.parse(localStorage.getItem('md_dev_tracks') || 'null'); } catch (e) { }
   BLD.list = Array.isArray(drafts) && drafts.length ? drafts : clone(BLD.pub); $('bFrom').textContent = 'Published tracks loaded from the ' + p.from + '.';
-  bindBuilder(); F1_init(); select(0); BLD_resize();
+  bindBuilder(); bindWorldUI(); F1_init(); select(0); BLD_resize();
 }
 function saveDraft() { try { localStorage.setItem('md_dev_tracks', JSON.stringify(BLD.list)); } catch (e) { if (!BLD._qw) { BLD._qw = 1; toast('Browser storage is full (screenshots are big). Publish to free space; drafts may not survive a reload.', 'err'); } } listUI(); }
 function edited(i) { return i >= BLD.pub.length || JSON.stringify(BLD.list[i]) !== JSON.stringify(BLD.pub[i]); }
@@ -69,9 +69,9 @@ function draw() {
   const c = cv(), tr = BLD.tr; if (!c || !tr) return; const g = c.getContext('2d'), dpr = c.width / (c.getBoundingClientRect().width || 1), v = BLD.v, px = 1 / v.s, th = tr.th, d = cur();
   g.setTransform(1, 0, 0, 1, 0, 0); g.fillStyle = '#07070a'; g.fillRect(0, 0, c.width, c.height);
   g.setTransform(dpr * v.s, 0, 0, dpr * v.s, dpr * v.x, dpr * v.y);
-  if (BLD.real && BLD.bake) g.drawImage(BLD.bake, 0, 0);
+  if (BLD.real && BLD.bake) { g.drawImage(BLD.bake, 0, 0, WORLD_W, WORLD_H); if (BLD.bake.width < WORLD_W * 0.99) drawRoadLive(g, tr, -v.x / v.s, -v.y / v.s, (c.width / dpr - v.x) / v.s, (c.height / dpr - v.y) / v.s); }
   else {
-    g.fillStyle = th.grass; g.fillRect(0, 0, WORLD_W, WORLD_H); g.strokeStyle = 'rgba(255,255,255,.05)'; g.lineWidth = 2; g.beginPath(); for (let x = 200; x < WORLD_W; x += 200) { g.moveTo(x, 0); g.lineTo(x, WORLD_H); } for (let y = 200; y < WORLD_H; y += 200) { g.moveTo(0, y); g.lineTo(WORLD_W, y); } g.stroke();
+    g.fillStyle = th.grass; g.fillRect(0, 0, WORLD_W, WORLD_H); g.strokeStyle = 'rgba(255,255,255,.05)'; const GS = 200 * Math.pow(2, Math.max(0, Math.ceil(Math.log2(Math.max(WORLD_W, WORLD_H) / 8800)))); g.lineWidth = Math.max(2, GS / 100); g.beginPath(); for (let x = GS; x < WORLD_W; x += GS) { g.moveTo(x, 0); g.lineTo(x, WORLD_H); } for (let y = GS; y < WORLD_H; y += GS) { g.moveTo(0, y); g.lineTo(WORLD_W, y); } g.stroke();
     g.lineJoin = g.lineCap = 'round'; pathTrack(g, tr); g.strokeStyle = th.sand; g.lineWidth = tr.w + 80; g.stroke(); g.strokeStyle = '#eee'; g.lineWidth = tr.w + 18; g.stroke(); g.setLineDash([26, 26]); g.strokeStyle = '#d42020'; g.stroke(); g.setLineDash([]);
     g.strokeStyle = th.road; g.lineWidth = tr.w; g.stroke(); g.setLineDash([40, 55]); g.strokeStyle = 'rgba(255,255,255,.28)'; g.lineWidth = 4; g.stroke(); g.setLineDash([]);
   }
@@ -112,7 +112,7 @@ function panelUI() {
   $('pCps').textContent = (BLD.tr ? BLD.tr.gates.length : 0) + (d.cps ? ' gates (custom)' : ' gates (automatic)'); $('pDir').textContent = d.rev ? 'Reversed' : 'As drawn';
   $('pHide').checked = !!d.hidden; $('pHideRow').classList.toggle('hidden', i >= BLD.pub.length); $('pDel').classList.toggle('hidden', i < BLD.pub.length);
   $('pLbWarn').classList.toggle('hidden', !layoutChanged(i)); $('pIdx').textContent = 'Track #' + (i + 1) + ' · leaderboard id ' + i;
-  imgPanelUI();
+  worldPanelUI(); imgPanelUI();
 }
 function issuesUI() { const c = { overlap: 0, edge: 0, sharp: 0 }; BLD.issues.forEach(x => c[x.t]++); const m = []; if (c.overlap) m.push('<span class="err">● Road overlaps itself (red rings)</span>'); if (c.edge) m.push('<span style="color:#ff9a2a">● Too close to the map edge (orange)</span>'); if (c.sharp) m.push('<span style="color:#ffd400">● Very tight corners (yellow), may be undriveable</span>'); if (BLD.tr && BLD.tr.gates.length < 2) m.push('<span class="err">● Add at least 2 checkpoints</span>'); $('pIssues').innerHTML = m.length ? m.join('<br>') : '<span class="ok">✓ No layout problems found</span>'; }
 function newTrack(fromDef) { const n = BLD.list.length + 1, d = fromDef ? Object.assign(clone(fromDef), { name: fromDef.name + ' copy', hidden: false }) : { name: 'New track ' + n, width: 170, pts: Array.from({ length: 12 }, (_, k) => { const a = k / 12 * Math.PI * 2; return [R4(0.5 + Math.cos(a) * 0.34), R4(0.5 + Math.sin(a) * 0.3)]; }), th: clone(THEMES.Sunset) }; delete d.seed; BLD.list.push(d); saveDraft(); select(BLD.list.length - 1); toast('Added track #' + BLD.list.length + '. Use Draw (D) to sketch a layout.', 'ok'); }
@@ -172,11 +172,54 @@ function bindBuilder() {
     if (BLD.stroke) { const l = BLD.stroke[BLD.stroke.length - 1]; if (Math.hypot(w[0] - l[0], w[1] - l[1]) > 6 / BLD.v.s) { BLD.stroke.push(w); draw(); } return; }
     const hv = BLD.tool === 'select' ? { pt: hitHandle(w) } : BLD.tool === 'cp' ? { gate: hitGate(w) } : null; const k = JSON.stringify(hv); if (k !== BLD._hk) { BLD._hk = k; BLD.hover = hv; draw(); } };
   c.onpointerup = () => { const D = BLD.drag; BLD.drag = null; if (BLD.stroke) { const S = BLD.stroke; BLD.stroke = null; draw(); finishStroke(S); } else if (D && !D.pan) { saveDraft(); panelUI(); } };
-  c.onwheel = e => { e.preventDefault(); if (BLD.tool === 'img' && imgWheel(e)) return; const r = c.getBoundingClientRect(), mx = e.clientX - r.left, my = e.clientY - r.top, f = Math.exp(-e.deltaY * 0.0015), s = Math.max(0.05, Math.min(2, BLD.v.s * f)); BLD.v.x = mx - (mx - BLD.v.x) * s / BLD.v.s; BLD.v.y = my - (my - BLD.v.y) * s / BLD.v.s; BLD.v.s = s; draw(); };
+  c.onwheel = e => { e.preventDefault(); if (BLD.tool === 'img' && imgWheel(e)) return; const r = c.getBoundingClientRect(), mx = e.clientX - r.left, my = e.clientY - r.top, f = Math.exp(-e.deltaY * 0.0015), s = Math.max(0.002, Math.min(4, BLD.v.s * f)); BLD.v.x = mx - (mx - BLD.v.x) * s / BLD.v.s; BLD.v.y = my - (my - BLD.v.y) * s / BLD.v.s; BLD.v.s = s; draw(); };
   addEventListener('resize', BLD_resize);
   addEventListener('keydown', e => { if ($('tab-tracks').classList.contains('hidden') || /INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName)) return;
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); undo(e.shiftKey); return; } if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') { e.preventDefault(); undo(true); return; }
     if (e.code === 'Space') { BLD.space = true; e.preventDefault(); } const m = { v: 'select', d: 'draw', s: 'start', c: 'cp', i: 'img' }[e.key.toLowerCase()]; if (m && !e.ctrlKey && !e.metaKey) setTool(m); if (e.key.toLowerCase() === 'f') fit();
     if ((e.key === 'Delete' || e.key === 'Backspace') && BLD.hover && BLD.hover.pt >= 0 && cur().pts.length > 4) change(d => d.pts.splice(BLD.hover.pt, 1)); });
   addEventListener('keyup', e => { if (e.code === 'Space') BLD.space = false; });
+}
+
+// ---------- map size + real scale ----------
+const R6 = v => Math.round(v * 1e6) / 1e6, clampWorld = v => Math.max(1000, Math.min(200000, Math.round(+v || 0)));
+// keep = keep the track's real size (just add/remove space around it); otherwise the track scales with the map
+function setWorld(w, h, keep, centre) {
+  w = clampWorld(w); h = clampWorld(h);
+  change(d => {
+    const [ow, oh] = worldOf(d), c = centre || [ow / 2, oh / 2];
+    if (keep) {
+      const M = p => [R6((p[0] * ow - c[0] + w / 2) / w), R6((p[1] * oh - c[1] + h / 2) / h)];
+      d.pts = d.pts.map(M); if (d.start) d.start = M(d.start); if (Array.isArray(d.cps)) d.cps = d.cps.map(M);
+      if (d.bg) { const q = M([d.bg.x, d.bg.y]); d.bg.x = q[0]; d.bg.y = q[1]; d.bg.w = R6(d.bg.w * ow / w); }
+    }
+    if (w === WORLD_DEF[0] && h === WORLD_DEF[1]) delete d.world; else d.world = [w, h];
+  });
+  fit();
+}
+function trackBox() { const P = BLD.tr.pts, xs = P.map(p => p[0]), ys = P.map(p => p[1]); return [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)]; }
+function scaleWorld(f, msg) { const [w, h] = worldOf(cur()); if (w * f > 200000 || h * f > 200000) return toast('That would make the map bigger than 200,000 px.', 'err'); setWorld(w * f, h * f, false); if (msg) toast(msg, 'ok'); }
+function bindWorldUI() {
+  if (!$('pWW')) return;
+  $('pWSet').onclick = () => setWorld($('pWW').value, $('pWH').value, $('pWKeep').checked);
+  [$('pWW'), $('pWH')].forEach(i => i.onkeydown = e => { e.stopPropagation(); if (e.key === 'Enter') $('pWSet').click(); });
+  $('pKm').onkeydown = e => { e.stopPropagation(); if (e.key === 'Enter') $('pKmGo').click(); };
+  document.querySelectorAll('[data-ws]').forEach(b => b.onclick = () => {
+    const k = b.dataset.ws;
+    if (k === 'fit') { const [x0, y0, x1, y1] = trackBox(), m = cur().width / 2 + 450; return setWorld(Math.max(2000, x1 - x0 + m * 2), Math.max(1500, y1 - y0 + m * 2), true, [(x0 + x1) / 2, (y0 + y1) / 2]); }
+    setWorld(WORLD_DEF[0] * +k, WORLD_DEF[1] * +k, $('pWKeep').checked);
+  });
+  $('pKmGo').onclick = () => { const km = +$('pKm').value; if (!(km > 0.1 && km < 40)) return toast('Enter the real lap length in km (for example 5.891).', 'err'); scaleWorld(km * 1000 * PX_PER_M / BLD.tr.len, 'Scaled so one lap is ' + km + ' km at game scale.'); };
+  $('pF1').onclick = () => {
+    const d = cur();
+    if (d.geo && d.geo.mpp && Math.abs(d.geo.mpp * PX_PER_M - 1) > 0.02) { const f = d.geo.mpp * PX_PER_M; change(dd => { dd.geo.mpp = Math.round(1000 / PX_PER_M) / 1000; if ((dd.width || 150) < 180) dd.width = 190; }); return scaleWorld(f, 'Now at real F1 scale (1 m = ' + PX_PER_M + ' px).'); }
+    const km = d.geo && d.geo.km ? d.geo.km : +$('pKm').value; if (!(km > 0.1)) return toast('Enter the real lap length in km first, then press Scale to length.', 'err');
+    if ((d.width || 150) < 180) change(dd => { dd.width = 190; });
+    scaleWorld(km * 1000 * PX_PER_M / BLD.tr.len, 'Scaled to a real ' + km + ' km lap.');
+  };
+}
+function worldPanelUI() {
+  if (!$('pWW')) return; const d = cur(), [w, h] = worldOf(d), km = v => (v / PX_PER_M / 1000).toFixed(2);
+  $('pWW').value = w; $('pWH').value = h; if (document.activeElement !== $('pKm')) $('pKm').value = d.geo && d.geo.km ? d.geo.km : BLD.tr ? km(BLD.tr.len) : '';
+  $('pWInfo').textContent = `Map ${km(w)} × ${km(h)} km · lap ${BLD.tr ? km(BLD.tr.len) : '?'} km · road ${(d.width / PX_PER_M).toFixed(1)} m wide (car is about 4 m long)`;
 }

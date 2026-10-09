@@ -1,5 +1,9 @@
 // ===== Tracks: spline centreline, baked scenery canvas, nearest-point queries =====
-const WORLD_W = 4400, WORLD_H = 3200;
+let WORLD_W = 4400, WORLD_H = 3200; // current track's world size in px (each track can set its own with def.world)
+const WORLD_DEF = [4400, 3200], PX_PER_M = 14.4; // 14.4 px = 1 m (matches the speedo: the car is ~4 m long)
+function worldOf(def) { const w = def && def.world; return Array.isArray(w) && w[0] >= 1000 && w[1] >= 1000 ? [Math.min(200000, Math.round(+w[0])), Math.min(200000, Math.round(+w[1]))] : WORLD_DEF.slice(); }
+function useWorld(def) { const w = worldOf(def); WORLD_W = w[0]; WORLD_H = w[1]; }
+function bakeScale(W, H) { return Math.min(1, 8192 / Math.max(W, H), Math.sqrt(40e6 / (W * H))); }
 const TRACKS = [
   { name: 'Sunset Circuit', width: 170, pts: [[0.12, 0.55], [0.14, 0.25], [0.3, 0.12], [0.5, 0.18], [0.62, 0.36], [0.76, 0.16], [0.9, 0.24], [0.9, 0.52], [0.76, 0.62], [0.88, 0.8], [0.7, 0.9], [0.5, 0.78], [0.36, 0.9], [0.18, 0.85]],
     th: { grass: '#4c8c3c', grass2: '#5a9c47', road: '#3a3c42', sand: '#d8c48f', tree: ['#2f6e2a', '#3f8a35'] } },
@@ -13,7 +17,7 @@ function rnd(seed) { let s = seed >>> 0; return () => { s = (s * 1664525 + 10139
 function trackDef(x) { return x && typeof x === 'object' ? x : (TRACKS[x] || TRACKS[0]); }
 function nearIdx(pts, x, y) { let bi = 0, bd = 1e18; for (let i = 0; i < pts.length; i++) { const d = (pts[i][0] - x) ** 2 + (pts[i][1] - y) ** 2; if (d < bd) { bd = d; bi = i; } } return bi; }
 function buildTrack(x, noBake) {
-  const def = trackDef(x), idx = typeof x === 'number' ? x : 0, cp = def.pts.map(p => [p[0] * WORLD_W, p[1] * WORLD_H]), raw = [];
+  useWorld(trackDef(x)); const def = trackDef(x), idx = typeof x === 'number' ? x : 0, cp = def.pts.map(p => [p[0] * WORLD_W, p[1] * WORLD_H]), raw = [];
   for (let i = 0; i < cp.length; i++) { const p0 = cp[(i - 1 + cp.length) % cp.length], p1 = cp[i], p2 = cp[(i + 1) % cp.length], p3 = cp[(i + 2) % cp.length]; for (let k = 0; k < 60; k++) raw.push(crPoint(p0, p1, p2, p3, k / 60)); }
   // resample to even spacing (~12px)
   let L = 0; const cum = [0]; for (let i = 1; i <= raw.length; i++) { const a = raw[i - 1], b = raw[i % raw.length]; L += Math.hypot(b[0] - a[0], b[1] - a[1]); cum.push(L); }
@@ -26,20 +30,25 @@ function buildTrack(x, noBake) {
   // checkpoint gates: explicit positions projected onto the line, else 7 evenly spaced
   let gi = Array.isArray(def.cps) && def.cps.length ? def.cps.map(c => nearIdx(pts, c[0] * WORLD_W, c[1] * WORLD_H)) : [1, 2, 3, 4, 5, 6, 7].map(k => Math.floor(k * N / 8));
   gi = [...new Set(gi.filter(i => i > N * 0.02 && i < N * 0.98))].sort((a, b) => a - b);
-  const tr = { idx, def, name: def.name, w: def.width, pts, dirs, n: N, len: L, th: def.th, gates: gi.map((i, k) => ({ s: k + 1, i })) };
+  const tr = { idx, def, W: WORLD_W, H: WORLD_H, name: def.name, w: def.width, pts, dirs, n: N, len: L, th: def.th, gates: gi.map((i, k) => ({ s: k + 1, i })) };
   tr.canvas = noBake ? null : bakeTrack(tr); return tr;
 }
 function pathTrack(g, tr) { g.beginPath(); tr.pts.forEach((p, i) => i ? g.lineTo(p[0], p[1]) : g.moveTo(p[0], p[1])); g.closePath(); }
-function bakeTrack(tr, cIn) {
-  const c = cIn || document.createElement('canvas'); if (!cIn) { c.width = WORLD_W; c.height = WORLD_H; } const g = c.getContext('2d'), th = tr.th, R = rnd(tr.def.seed || (tr.idx * 977 + 13));
+function bakeTrack(tr, cIn) { // bakes in this track's own world size (it can re-bake later when a screenshot loads)
+  const pw = WORLD_W, ph = WORLD_H; WORLD_W = tr.W || pw; WORLD_H = tr.H || ph;
+  try { return bakeTrackIn(tr, cIn); } finally { WORLD_W = pw; WORLD_H = ph; }
+}
+function bakeTrackIn(tr, cIn) {
+  const bs = tr.bs = cIn && tr.bs ? tr.bs : bakeScale(WORLD_W, WORLD_H), AF = Math.max(1, Math.min(8, WORLD_W * WORLD_H / 14080000));
+  const c = cIn || document.createElement('canvas'); if (!cIn) { c.width = Math.ceil(WORLD_W * bs); c.height = Math.ceil(WORLD_H * bs); } const g = c.getContext('2d'), th = tr.th, R = rnd(tr.def.seed || (tr.idx * 977 + 13));
   // optional real-circuit scenery from an uploaded map screenshot (bakes again once the image has loaded)
   const bg = tr.def.bg, img = bg && bg.src ? bgImage(bg.src) : null, scen = !!(img && img.complete && img.naturalWidth);
   if (img && !scen && !img._failed) img.addEventListener('load', () => { bakeTrack(tr, c); if (typeof onTrackRebaked === 'function') onTrackRebaked(tr); }, { once: true });
-  g.setTransform(1, 0, 0, 1, 0, 0); g.globalAlpha = 1; g.globalCompositeOperation = 'source-over';
+  g.setTransform(bs, 0, 0, bs, 0, 0); g.globalAlpha = 1; g.globalCompositeOperation = 'source-over';
   g.fillStyle = th.grass; g.fillRect(0, 0, WORLD_W, WORLD_H);
   if (scen) { try { drawScenery(g, tr, img, R); } catch (e) { console.warn('[scenery]', e); } }
   else {
-  for (let i = 0; i < 2600; i++) { g.fillStyle = R() < 0.5 ? th.grass2 : 'rgba(0,0,0,.05)'; g.globalAlpha = 0.35; g.beginPath(); g.arc(R() * WORLD_W, R() * WORLD_H, 20 + R() * 90, 0, 7); g.fill(); }
+  for (let i = 0, nb = 2600 * AF; i < nb; i++) { g.fillStyle = R() < 0.5 ? th.grass2 : 'rgba(0,0,0,.05)'; g.globalAlpha = 0.35; g.beginPath(); g.arc(R() * WORLD_W, R() * WORLD_H, 20 + R() * 90, 0, 7); g.fill(); }
   
   }
   g.globalAlpha = 1; g.lineJoin = g.lineCap = 'round';
@@ -64,7 +73,7 @@ function bakeTrack(tr, cIn) {
   { const gx = p0[0] + nx * (tr.w / 2 + 120), gy = p0[1] + ny * (tr.w / 2 + 120); g.save(); g.translate(gx, gy); g.rotate(a0); g.fillStyle = 'rgba(0,0,0,.3)'; g.fillRect(-190, -30, 400, 80); g.fillStyle = '#8a8f99'; g.fillRect(-200, -40, 400, 80); for (let i = 0; i < 260; i++) { g.fillStyle = ['#e74c3c', '#f1c40f', '#3498db', '#ecf0f1', '#9b59b6', '#2ecc71'][Math.floor(R() * 6)]; g.beginPath(); g.arc(-190 + R() * 380, -30 + R() * 60, 4, 0, 7); g.fill(); } g.fillStyle = th.night ? '#ff2fb0' : '#d8262f'; g.fillRect(-200, -52, 400, 14); g.restore(); }
   // trees / props off-track
   let placed = 0;
-  for (let tries = 0; tries < 6000 && placed < (scen ? 0 : 520); tries++) {
+  for (let tries = 0; tries < 6000 * AF && placed < (scen ? 0 : 520 * AF); tries++) {
     const x = R() * WORLD_W, y = R() * WORLD_H; if (nearestFull(tr, x, y).d < tr.w / 2 + 130) continue; placed++;
     const r = 26 + R() * 30;
     if (th.night && R() < 0.35) { g.fillStyle = 'rgba(0,0,0,.35)'; g.fillRect(x - r + 10, y - r + 10, r * 2, r * 2.4); g.fillStyle = ['#1c2233', '#232b40', '#2a2f45'][Math.floor(R() * 3)]; g.fillRect(x - r, y - r, r * 2, r * 2.4); g.fillStyle = ['#00e5ff', '#ff2fb0', '#ffe14d'][Math.floor(R() * 3)]; g.globalAlpha = 0.7; g.fillRect(x - r, y - r, r * 2, 4); g.globalAlpha = 1; continue; }
@@ -96,7 +105,7 @@ function bgPlace(g, bg, img, k) {
 // 0 ground, 1 trees/grass, 2 water, 3 building, 4 paved (roads, car parks, tarmac)
 function sceneryClasses(bg, img) {
   const key = [bg.src.length, bg.src.slice(-40), bg.x, bg.y, bg.w, bg.rot, bg.bmin].join('|'); if (SCEN_CACHE[key]) return SCEN_CACHE[key];
-  const K = 3, W = Math.ceil(WORLD_W / K), H = Math.ceil(WORLD_H / K), c = document.createElement('canvas'); c.width = W; c.height = H;
+  const K = Math.max(3, Math.ceil(Math.sqrt(WORLD_W * WORLD_H / 1.6e6))), W = Math.ceil(WORLD_W / K), H = Math.ceil(WORLD_H / K), c = document.createElement('canvas'); c.width = W; c.height = H;
   const g = c.getContext('2d', { willReadFrequently: true }); bgPlace(g, bg, img, 1 / K);
   const px = g.getImageData(0, 0, W, H).data, m = new Uint8Array(W * H), bmin = bg.bmin || 0.45;
   for (let i = 0, j = 0; i < m.length; i++, j += 4) {
@@ -138,10 +147,28 @@ function drawScenery(g, tr, img, R) {
   g.restore();
   // trees on the green areas, kept clear of the road
   let placed = 0;
-  for (let t = 0; t < 14000 && placed < 900; t++) {
+  const AF = Math.max(1, Math.min(8, WORLD_W * WORLD_H / 14080000)); for (let t = 0; t < 14000 * AF && placed < 900 * AF; t++) {
     const x = R() * WORLD_W, y = R() * WORLD_H, k = m[((y / K) | 0) * W + ((x / K) | 0)]; if (k !== 1 || R() < 0.35) continue; if (nearestFull(tr, x, y).d < tr.w / 2 + 120) continue; placed++;
     const r = 16 + R() * 22; g.fillStyle = 'rgba(0,0,0,.25)'; g.beginPath(); g.arc(x + 9, y + 11, r, 0, 7); g.fill();
     const gr = g.createRadialGradient(x - r * 0.35, y - r * 0.35, r * 0.1, x, y, r); gr.addColorStop(0, th.tree[1]); gr.addColorStop(1, th.tree[0]); g.fillStyle = gr; g.beginPath(); g.arc(x, y, r, 0, 7); g.fill();
     if (th.snow) { g.fillStyle = 'rgba(255,255,255,.8)'; g.beginPath(); g.arc(x - r * 0.25, y - r * 0.25, r * 0.45, 0, 7); g.fill(); }
   }
+}
+
+// Sharp road on top of a down-sampled bake (huge / real-scale tracks). Only the part on screen is drawn.
+function drawRoadLive(g, tr, x0, y0, x1, y1) {
+  const P = tr.pts, n = tr.n, m = tr.w + 80, th = tr.th, vis = new Uint8Array(n); let any = 0;
+  for (let k = 0; k < n; k++) { const q = P[k]; if (q[0] > x0 - m && q[0] < x1 + m && q[1] > y0 - m && q[1] < y1 + m) { vis[k] = 1; any = 1; } }
+  if (!any) return;
+  const path = test => { const p = new Path2D(); let on = false; for (let k = 0; k <= n; k++) { const i = k % n, j = (k + 1) % n; if (k < n && vis[i] && test(i)) { if (!on) { p.moveTo(P[i][0], P[i][1]); on = true; } p.lineTo(P[j][0], P[j][1]); } else on = false; } return p; };
+  const all = path(() => true);
+  g.save(); g.lineJoin = g.lineCap = 'round';
+  g.strokeStyle = '#f2f2f2'; g.lineWidth = tr.w + 26; g.stroke(all);
+  g.lineCap = 'butt'; g.strokeStyle = th.night ? '#ff2fb0' : '#d8262f'; g.stroke(path(i => ((i / 3) | 0) % 2 === 0));
+  g.lineCap = 'round'; g.strokeStyle = th.road; g.lineWidth = tr.w; g.stroke(all);
+  g.lineCap = 'butt'; g.strokeStyle = 'rgba(255,255,255,.35)'; g.lineWidth = 4; g.stroke(path(i => i % 8 < 3));
+  const p0 = P[0], a0 = tr.dirs[0], sq = tr.w / 10;
+  if (vis[0]) { g.save(); g.translate(p0[0], p0[1]); g.rotate(a0); for (let r = 0; r < 2; r++) for (let k = 0; k < 10; k++) { g.fillStyle = (r + k) % 2 ? '#111' : '#fff'; g.fillRect(-sq + r * sq, -tr.w / 2 + k * sq, sq, sq); } g.restore();
+    for (let s = 0; s < 8; s++) { const gp = gridSlot(tr, s); g.save(); g.translate(gp.x, gp.y); g.rotate(gp.a); g.strokeStyle = 'rgba(255,255,255,.6)'; g.lineWidth = 3; g.beginPath(); g.moveTo(34, -24); g.lineTo(40, -24); g.lineTo(40, 24); g.lineTo(34, 24); g.stroke(); g.restore(); } }
+  g.restore();
 }

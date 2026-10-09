@@ -59,15 +59,15 @@ async function unlock(auto) {
   try {
     const ok = await sb('POST', 'rpc/admin_check', { p_secret: SECRET });
     if (ok !== true) throw new Error('Wrong secret key.');
-    if ($('gRem').checked) sessionStorage.setItem('md_dev_secret', SECRET); else sessionStorage.removeItem('md_dev_secret');
+    if ($('gRem').checked) localStorage.setItem('md_dev_secret', SECRET); else localStorage.removeItem('md_dev_secret');
     $('gate').classList.add('hidden'); $('app').classList.remove('hidden'); enterApp();
   } catch (e) {
-    SECRET = ''; sessionStorage.removeItem('md_dev_secret');
+    SECRET = ''; localStorage.removeItem('md_dev_secret');
     $('gMsg').textContent = /admin_check|PGRST202|schema cache/i.test(e.message) || e.status === 404 ? 'Supabase doesn\'t have the admin functions yet. Open "First-time setup" below, make a secret and run the SQL.' : /fetch/i.test(e.message) ? 'Could not reach Supabase. Check the URL.' : e.message;
     if (auto) $('gMsg').textContent = '';
   } finally { $('gGo').disabled = false; $('gGo').textContent = 'UNLOCK'; }
 }
-function lock() { sessionStorage.removeItem('md_dev_secret'); SECRET = ''; $('ghTok').value = ''; location.reload(); }
+function lock() { localStorage.removeItem('md_dev_secret'); SECRET = ''; $('ghTok').value = ''; location.reload(); }
 
 // ---------- tabs ----------
 function setTab(t) { document.querySelectorAll('.nv').forEach(b => b.classList.toggle('on', b.dataset.tab === t)); document.querySelectorAll('.tab').forEach(s => s.classList.toggle('hidden', s.id !== 'tab-' + t)); if (t === 'tracks') BLD_resize(); if (t === 'lb') lbTrackSelect(); }
@@ -147,5 +147,5 @@ async function deployGame() {
   $('lockBtn').onclick = lock; $('plGo').onclick = findPlayers; $('plQ').onkeydown = e => { if (e.key === 'Enter') findPlayers(); }; $('plBody').onclick = plClick;
   $('lbGo').onclick = loadLaps; $('lbT').onchange = loadLaps; $('lbBody').onclick = lbClick; $('lbClear').onclick = () => clearTrack(+$('lbT').value || 0); $('dpGo').onclick = deployGame;
   $('ghTok').oninput = () => $('ghState').classList.toggle('on', !!$('ghTok').value.trim());
-  const s = sessionStorage.getItem('md_dev_secret'); if (s && DCFG.sbUrl) { $('gSecret').value = s; $('gRem').checked = true; unlock(true); }
+  const s = localStorage.getItem('md_dev_secret'); if (s && DCFG.sbUrl) { $('gSecret').value = s; $('gRem').checked = true; unlock(true); }
 })();

@@ -39,11 +39,13 @@ function geoToTrack(item) {
   while (P.length > 4 && Math.hypot(P[0][0] - P[P.length - 1][0], P[0][1] - P[P.length - 1][1]) < 1) P.pop(); // closed ring duplicate
   let lenM = 0; P.forEach((p, i) => { const q = P[(i + 1) % P.length]; lenM += Math.hypot(q[0] - p[0], q[1] - p[1]); });
   const xs = P.map(p => p[0]), ys = P.map(p => p[1]), x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
-  const s = Math.min(WORLD_W * 0.84 / Math.max(1, x1 - x0), WORLD_H * 0.84 / Math.max(1, y1 - y0)), cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
+  // true scale: 1 m = PX_PER_M px (same scale as the car and speedo). The map grows to fit the real circuit.
+  const s = PX_PER_M, cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
+  WORLD_W = Math.min(200000, Math.max(WORLD_DEF[0], Math.ceil((x1 - x0) * s / 0.88 + 600))); WORLD_H = Math.min(200000, Math.max(WORLD_DEF[1], Math.ceil((y1 - y0) * s / 0.88 + 600)));
   P = P.map(p => [(p[0] - cx) * s + WORLD_W / 2, (p[1] - cy) * s + WORLD_H / 2]);
-  const Rs = resampleLoop(P, 24); let eps = 3, out; do { out = rdpLoop(Rs, eps); eps *= 1.25; } while (out.length > 150);
+  const Rs = resampleLoop(P, 24); let eps = 3, out; do { out = rdpLoop(Rs, eps); eps *= 1.25; } while (out.length > Math.min(600, Math.max(150, Math.round(lenM / 18))));
   if (out.length < 8) out = resampleLoop(P, (lenM * s) / 16);
-  return { name: item.name.slice(0, 32), width: 150, pts: out.map(p => norm(p[0], p[1])), start: norm(P[0][0], P[0][1]), th: clone(THEMES['Grand Prix']), geo: { km: Math.round(lenM / 10) / 100, mpp: Math.round(1000 / s) / 1000 } };
+  return { name: item.name.slice(0, 32), width: 190, world: [WORLD_W, WORLD_H], pts: out.map(p => norm(p[0], p[1])), start: norm(P[0][0], P[0][1]), th: clone(THEMES['Grand Prix']), geo: { km: Math.round(lenM / 10) / 100, mpp: Math.round(1000 / s) / 1000 } };
 }
 function pickCircuit(items) {
   return new Promise(res => {
@@ -149,5 +151,5 @@ function F1_init() {
 function imgPanelUI() {
   const d = cur(), b = d.bg; if (!$('pImgOpts')) return; $('pImgOpts').classList.toggle('hidden', !b); $('pImgDel').classList.toggle('hidden', !b); $('pImg').textContent = b ? 'Replace screenshot' : 'Upload screenshot';
   if (b) { $('pImgMode').value = b.mode || 'stylised'; $('pImgA').value = BLD.imgA; $('pImgAv').textContent = Math.round(BLD.imgA * 100) + '%'; $('pImgS').value = b.w; $('pImgSv').textContent = b.w.toFixed(2); const deg = Math.round((b.rot || 0) * 1800 / Math.PI) / 10; $('pImgR').value = deg; $('pImgRv').textContent = deg + '°'; $('pImgB').value = b.bmin || 0.45; $('pImgBv').textContent = (b.bmin || 0.45).toFixed(2); }
-  $('pGeo').textContent = d.geo ? `Real circuit: ${d.geo.km} km · 1 px ≈ ${d.geo.mpp} m. Real F1 roads are ~15 m wide, so a game-width road may overlap on tight sections: lower Width if red rings appear.` : '';
+  $('pGeo').textContent = d.geo ? `Real circuit: ${d.geo.km} km · 1 px ≈ ${d.geo.mpp} m. ${d.geo.mpp > 0.08 ? 'Not to scale yet: press Real F1 scale under Map size.' : 'True scale: road is ' + (d.width / PX_PER_M).toFixed(1) + ' m wide (real F1 tracks are about 12 to 15 m).'}` : '';
 }
