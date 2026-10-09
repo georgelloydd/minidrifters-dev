@@ -73,7 +73,7 @@
   </section>
 
   <section class="tab hidden" id="tab-deploy">
-    <div class="panel"><h2>Deploy the game</h2><p class="dim small">Pushes the game files bundled in this dev site (<b id="dpN"></b> files) to the game repo in one commit, then makes sure GitHub Pages is on. Your published tracks.json is never overwritten. The token in the top bar needs <b>Contents: Read and write</b> and <b>Pages: Read and write</b> on the game repo. It stays in this tab's memory only.</p>
+    <div class="panel"><h2>Deploy the game</h2><p class="dim small">Pushes the game files bundled in this dev site (<b id="dpN"></b> files) to the game repo in one commit, then makes sure GitHub Pages is on. Your published tracks.json is never overwritten. The token in the top bar needs <b>Contents: Read and write</b> and <b>Pages: Read and write</b> on the game repo. It stays in this tab's memory only.</p><p id="dpVer" class="small" style="margin:6px 0 10px">Checking live game version…</p>
       <label>Game repo<input id="dpRepo" spellcheck="false"></label>
       <label>Game URL <span class="dim">(blank = the repo's GitHub Pages address)</span><input id="dpUrl" spellcheck="false"></label>
       <label>Commit message<input id="dpMsg" value="Update Mini Drifters"></label>
@@ -82,5 +82,5 @@
   </section>
 </div>
 <div id="toasts"></div>
-<script src="js/track.js"></script><script src="js/game-files.js"></script><script src="js/dev.js"></script><script src="js/builder.js"></script>
+<script src="js/track.js"></script><script src="js/game-files.js"></script><script src="js/dev.js"></script><script src="js/builder.js"></script><script src="js/build.js"></script><script src="js/version.js"></script>
 </body></html>
