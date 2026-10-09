@@ -7,6 +7,7 @@
     <div class="logo">MINI <span>DRIFTERS</span></div><div class="sub">DEV ACCESS</div>
     <label>Supabase project URL<input id="gUrl" placeholder="https://xxxx.supabase.co" spellcheck="false"></label>
     <label>Supabase publishable / anon key<input id="gKey" placeholder="sb_publishable_… or eyJ…" spellcheck="false"></label>
+    <label>Game server URL (multiplayer, optional)<input id="gSrv" placeholder="wss://minidrifters-server.onrender.com" spellcheck="false"></label>
     <div class="dim small" id="gAuto"></div>
     <label>Admin secret key<input id="gSecret" type="password" autocomplete="current-password" placeholder="MDADMIN-…"></label>
     <label class="chk"><input type="checkbox" id="gRem"> Stay unlocked on this device</label>
@@ -97,6 +98,9 @@
       <label>Commit message<input id="dpMsg" value="Update Mini Drifters"></label>
       <label class="chk"><input type="checkbox" id="dpSb"> Write the Supabase settings into the game (<span id="dpSbInfo"></span>)</label>
       <button id="dpGo" class="big">DEPLOY GAME</button><div id="dpLog"></div></div>
+    <div class="panel"><h2>Deploy the game server</h2><p class="dim small">Pushes the multiplayer server (server.js, package.json, render.yaml, Dockerfile, fly.toml, README) to a GitHub repo using the token in the top bar. If the repo doesn't exist yet it tries to create it (needs a token that can create repos). If you pick the game repo, the server goes in a <b>server/</b> folder. Then on <b>render.com</b>: New → Blueprint → pick the repo. Every later push here redeploys it automatically.</p>
+      <label>Server repo<input id="svRepo" spellcheck="false" placeholder="owner/minidrifters-server"></label>
+      <button id="svGo" class="big">DEPLOY SERVER</button><div id="svLog"></div></div>
   </section>
 </div>
 <div id="modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:60;align-items:center;justify-content:center"><div id="mBox" style="background:#15161b;border:1px solid #33343c;border-radius:8px;padding:16px;width:min(920px,95vw);max-height:94vh;overflow:auto"></div></div>
