@@ -32,6 +32,7 @@ function buildTrack(x, noBake) {
   gi = [...new Set(gi.filter(i => i > N * 0.02 && i < N * 0.98))].sort((a, b) => a - b);
   if (!gi.length) gi = [1, 2, 3, 4, 5, 6, 7].map(k => Math.floor(k * N / 8));
   const tr = { walls: wallSegs(def), idx, def, W: WORLD_W, H: WORLD_H, name: def.name, w: def.width, pts, dirs, n: N, len: L, th: def.th, gates: gi.map((i, k) => ({ s: k + 1, i })) };
+  tr.elev = elevSecs(tr); tr.rails = railSegs(tr);
   tr.canvas = noBake ? null : bakeTrack(tr); return tr;
 }
 function pathTrack(g, tr) { g.beginPath(); tr.pts.forEach((p, i) => i ? g.lineTo(p[0], p[1]) : g.moveTo(p[0], p[1])); g.closePath(); }
@@ -74,9 +75,17 @@ function bakeTrackIn(tr, cIn) {
   { const gx = p0[0] + nx * (tr.w / 2 + 120), gy = p0[1] + ny * (tr.w / 2 + 120); g.save(); g.translate(gx, gy); g.rotate(a0); g.fillStyle = 'rgba(0,0,0,.3)'; g.fillRect(-190, -30, 400, 80); g.fillStyle = '#8a8f99'; g.fillRect(-200, -40, 400, 80); for (let i = 0; i < 260; i++) { g.fillStyle = ['#e74c3c', '#f1c40f', '#3498db', '#ecf0f1', '#9b59b6', '#2ecc71'][Math.floor(R() * 6)]; g.beginPath(); g.arc(-190 + R() * 380, -30 + R() * 60, 4, 0, 7); g.fill(); } g.fillStyle = th.night ? '#ff2fb0' : '#d8262f'; g.fillRect(-200, -52, 400, 14); g.restore(); }
   // trees / props off-track
   let placed = 0;
-  for (let tries = 0; tries < 6000 * AF && placed < (scen ? 0 : 520 * AF); tries++) {
+  for (let tries = 0; tries < 6000 * AF && placed < (scen || th.scene === 'none' ? 0 : 520 * AF); tries++) {
     const x = R() * WORLD_W, y = R() * WORLD_H; if (nearestFull(tr, x, y).d < tr.w / 2 + 130) continue; placed++;
     const r = 26 + R() * 30;
+    if (th.scene === 'city' && R() < 0.88) { const bw = 40 + R() * 70, bh = 40 + R() * 70, ang = R() < 0.6 ? 0 : R() * Math.PI; g.save(); g.translate(x, y); g.rotate(ang); g.fillStyle = 'rgba(0,0,0,.3)'; g.fillRect(-bw / 2 + 12, -bh / 2 + 14, bw, bh);
+      const pal = th.night ? ['#1c2233', '#232b40', '#2a2f45', '#30283a'] : ['#8e949e', '#a3a9b2', '#6f757e', '#b8a58f', '#9a8f84', '#c7c9cc']; g.fillStyle = pal[Math.floor(R() * pal.length)]; g.fillRect(-bw / 2, -bh / 2, bw, bh);
+      g.strokeStyle = 'rgba(0,0,0,.22)'; g.lineWidth = 3; g.strokeRect(-bw / 2 + 5, -bh / 2 + 5, bw - 10, bh - 10);
+      for (let k = 0, nk = 1 + Math.floor(R() * 4); k < nk; k++) { g.fillStyle = th.night ? (R() < 0.5 ? '#ffe14d' : '#00e5ff') : '#d6d8db'; g.fillRect((R() - 0.5) * (bw - 24) - 5, (R() - 0.5) * (bh - 24) - 5, 10, 10); }
+      g.restore(); continue; }
+    if (th.scene === 'desert') { if (R() < 0.6) { const rr = r * 0.55; g.fillStyle = 'rgba(0,0,0,.2)'; g.beginPath(); g.ellipse(x + 8, y + 9, rr, rr * 0.75, 0, 0, 7); g.fill(); g.fillStyle = ['#9c7b55', '#a98a62', '#8a6a48'][Math.floor(R() * 3)]; g.beginPath(); g.ellipse(x, y, rr, rr * 0.75, R() * 3, 0, 7); g.fill(); g.fillStyle = 'rgba(255,255,255,.12)'; g.beginPath(); g.arc(x - rr * 0.3, y - rr * 0.25, rr * 0.35, 0, 7); g.fill(); }
+      else { const cr = r * 0.22; g.fillStyle = 'rgba(0,0,0,.22)'; g.beginPath(); g.arc(x + 7, y + 8, cr * 1.6, 0, 7); g.fill(); g.fillStyle = '#4f7d3a'; for (const [ox, oy, rad] of [[0, 0, cr], [cr * 1.4, -cr * 0.4, cr * 0.6], [-cr * 1.4, cr * 0.3, cr * 0.6]]) { g.beginPath(); g.arc(x + ox, y + oy, rad, 0, 7); g.fill(); } g.fillStyle = '#6a9a4c'; g.beginPath(); g.arc(x - cr * 0.3, y - cr * 0.3, cr * 0.45, 0, 7); g.fill(); }
+      continue; }
     if (th.night && R() < 0.35) { g.fillStyle = 'rgba(0,0,0,.35)'; g.fillRect(x - r + 10, y - r + 10, r * 2, r * 2.4); g.fillStyle = ['#1c2233', '#232b40', '#2a2f45'][Math.floor(R() * 3)]; g.fillRect(x - r, y - r, r * 2, r * 2.4); g.fillStyle = ['#00e5ff', '#ff2fb0', '#ffe14d'][Math.floor(R() * 3)]; g.globalAlpha = 0.7; g.fillRect(x - r, y - r, r * 2, 4); g.globalAlpha = 1; continue; }
     g.fillStyle = 'rgba(0,0,0,.25)'; g.beginPath(); g.arc(x + 12, y + 14, r, 0, 7); g.fill();
     const gr = g.createRadialGradient(x - r * 0.35, y - r * 0.35, r * 0.1, x, y, r); gr.addColorStop(0, th.tree[1]); gr.addColorStop(1, th.tree[0]); g.fillStyle = gr; g.beginPath(); g.arc(x, y, r, 0, 7); g.fill();
@@ -189,6 +198,9 @@ function fixDef(d) {
   if (d.start && !finPt(d.start)) delete d.start;
   if (d.cps && !Array.isArray(d.cps)) delete d.cps; else if (d.cps) d.cps = d.cps.filter(finPt);
   if (d.walls && !Array.isArray(d.walls)) delete d.walls; else if (d.walls) d.walls = d.walls.filter(w => Array.isArray(w)).map(w => w.filter(finPt)).filter(w => w.length >= 2);
+  if (d.elev && !Array.isArray(d.elev)) delete d.elev; else if (d.elev) d.elev = d.elev.filter(e => e && (e.t === 'bridge' || e.t === 'tunnel') && finPt(e.a) && finPt(e.b));
+  if (d.spawn && !(typeof d.spawn === 'object' && finPt(d.spawn.p))) delete d.spawn;
+  if (d.th.scene && !['city', 'desert', 'none'].includes(d.th.scene)) delete d.th.scene;
   Object.defineProperty(d, '_ok', { value: true, enumerable: false, configurable: true, writable: true });
   return d;
 }
@@ -210,9 +222,11 @@ function drawWalls(g, tr) {
   g.setLineDash([22, 22]); g.strokeStyle = tr.th && tr.th.night ? '#ff2fb0' : '#d8262f'; g.lineWidth = 5; g.stroke(); g.setLineDash([]);
   g.restore();
 }
-function wallCollide(c, tr) {
-  const S = tr && tr.walls; if (!S || !S.length) return false; let hit = false;
+function wallCollide(c, tr) { return segCollide(c, tr && tr.walls, null); }
+function segCollide(c, S, L) {
+  if (!S || !S.length) return false; let hit = false;
   for (const s of S) {
+    if (L !== null && s.L !== L) continue;
     if (c.x < s.x0 - WALL_R || c.x > s.x1 + WALL_R || c.y < s.y0 - WALL_R || c.y > s.y1 + WALL_R) continue;
     const dx = s.bx - s.ax, dy = s.by - s.ay, L2 = dx * dx + dy * dy, t = Math.max(0, Math.min(1, ((c.x - s.ax) * dx + (c.y - s.ay) * dy) / L2));
     const qx = s.ax + dx * t, qy = s.ay + dy * t; let nx = c.x - qx, ny = c.y - qy, d = Math.hypot(nx, ny);
@@ -224,3 +238,54 @@ function wallCollide(c, tr) {
   }
   return hit;
 }
+
+// ---------- elevation: def.elev = [{ t: 'bridge'|'tunnel', a, m, b }] (normalised points on the road; m picks which way round) ----------
+function elevSecs(tr) {
+  const E = tr.def.elev, N = tr.n; tr.layerAt = null; if (!Array.isArray(E) || !E.length) return [];
+  const L = new Int8Array(N), S = [], ix = p => nearIdx(tr.pts, p[0] * tr.W, p[1] * tr.H);
+  E.forEach((e, k) => {
+    if (!e || !finPt(e.a) || !finPt(e.b)) return; let a = ix(e.a), b = ix(e.b); const m = finPt(e.m) ? ix(e.m) : null; let len = (b - a + N) % N;
+    if (m !== null && (m - a + N) % N > len) { const t = a; a = b; b = t; len = (b - a + N) % N; }
+    if (len < 6 || len > N - 6) return; const v = e.t === 'tunnel' ? -1 : 1; for (let j = 0; j <= len; j++) L[(a + j) % N] = v;
+    S.push({ t: v < 0 ? 'tunnel' : 'bridge', i0: a, len, k });
+  });
+  if (S.length) tr.layerAt = L; return S;
+}
+function secIdx(tr, s, step) { const r = []; for (let k = 0; k < s.len; k += step) r.push((s.i0 + k) % tr.n); r.push((s.i0 + s.len) % tr.n); return r; }
+function secPts(tr, s, off, step) { return secIdx(tr, s, step || 2).map(i => { const p = tr.pts[i], a = tr.dirs[i]; return [p[0] - Math.sin(a) * off, p[1] + Math.cos(a) * off]; }); }
+function secPath(g, tr, s, off, step) { g.beginPath(); secPts(tr, s, off, step).forEach((p, i) => i ? g.lineTo(p[0], p[1]) : g.moveTo(p[0], p[1])); }
+function railSegs(tr) {
+  const R = []; for (const s of tr.elev || []) { const L = s.t === 'tunnel' ? -1 : 1, off = tr.w / 2 + (L > 0 ? 14 : 10);
+    for (const sd of [-1, 1]) { const P = secPts(tr, s, off * sd, 3); for (let i = 1; i < P.length; i++) { const [ax, ay] = P[i - 1], [bx, by] = P[i]; if (Math.hypot(bx - ax, by - ay) < 1) continue; R.push({ L, ax, ay, bx, by, x0: Math.min(ax, bx), y0: Math.min(ay, by), x1: Math.max(ax, bx), y1: Math.max(ay, by) }); } } }
+  return R;
+}
+function carLayer(tr, c) { if (!tr || !tr.layerAt) return 0; const r = nearest(tr, c.x, c.y, c._lh != null ? c._lh : (c.hint || 0)); c._lh = r.i; return tr.layerAt[r.i]; }
+function drawTunnelFloor(g, tr) {
+  const S = (tr.elev || []).filter(s => s.t === 'tunnel'); if (!S.length) return; g.save(); g.lineJoin = 'round'; g.lineCap = 'butt';
+  for (const s of S) { secPath(g, tr, s, 0); g.strokeStyle = '#5a5d64'; g.lineWidth = tr.w + 30; g.stroke(); g.strokeStyle = '#1f2025'; g.lineWidth = tr.w; g.stroke();
+    g.setLineDash([40, 50]); g.strokeStyle = 'rgba(255,220,150,.3)'; g.lineWidth = 4; g.stroke(); g.setLineDash([]);
+    for (const sd of [-1, 1]) secPts(tr, s, (tr.w / 2 + 7) * sd, 14).forEach(p => { g.fillStyle = 'rgba(255,196,110,.16)'; g.beginPath(); g.arc(p[0], p[1], 30, 0, 7); g.fill(); g.fillStyle = '#ffd88a'; g.beginPath(); g.arc(p[0], p[1], 5, 0, 7); g.fill(); }); }
+  g.restore();
+}
+function drawTunnelRoof(g, tr, alpha) {
+  const S = (tr.elev || []).filter(s => s.t === 'tunnel'); if (!S.length || alpha <= 0.02) return; g.save(); g.lineJoin = 'round'; g.lineCap = 'butt'; g.globalAlpha = Math.min(1, alpha);
+  for (const s of S) { secPath(g, tr, s, 0); g.strokeStyle = 'rgba(0,0,0,.35)'; g.lineWidth = tr.w + 52; g.stroke(); g.strokeStyle = tr.th.grass2 || tr.th.grass; g.lineWidth = tr.w + 44; g.stroke();
+    g.strokeStyle = 'rgba(0,0,0,.08)'; g.lineWidth = tr.w * 0.5; g.stroke();
+    for (const i of [s.i0, (s.i0 + s.len) % tr.n]) { const p = tr.pts[i], a = tr.dirs[i]; g.save(); g.translate(p[0], p[1]); g.rotate(a); g.fillStyle = '#2c2d33'; g.fillRect(-9, -tr.w / 2 - 26, 18, tr.w + 52); g.fillStyle = '#8b8f97'; g.fillRect(-4, -tr.w / 2 - 26, 8, tr.w + 52); g.restore(); } }
+  g.restore();
+}
+function drawBridges(g, tr) {
+  const S = (tr.elev || []).filter(s => s.t === 'bridge'); if (!S.length) return; g.save(); g.lineJoin = 'round'; g.lineCap = 'butt';
+  for (const s of S) {
+    g.save(); g.translate(18, 20); secPath(g, tr, s, 0); g.strokeStyle = 'rgba(0,0,0,.32)'; g.lineWidth = tr.w + 36; g.stroke(); g.restore();
+    secPath(g, tr, s, 0); g.strokeStyle = '#9aa0a8'; g.lineWidth = tr.w + 32; g.stroke(); g.strokeStyle = tr.th.road || '#3a3c42'; g.lineWidth = tr.w; g.stroke();
+    g.setLineDash([40, 50]); g.strokeStyle = 'rgba(255,255,255,.35)'; g.lineWidth = 4; g.stroke(); g.setLineDash([]);
+    for (const sd of [-1, 1]) { secPath(g, tr, s, (tr.w / 2 + 14) * sd); g.strokeStyle = '#e6e9ee'; g.lineWidth = 6; g.stroke(); g.setLineDash([5, 28]); g.strokeStyle = '#4a4d55'; g.lineWidth = 10; g.stroke(); g.setLineDash([]); }
+  }
+  g.restore();
+}
+function drawElevAll(g, tr, roofA) { drawTunnelFloor(g, tr); drawTunnelRoof(g, tr, roofA); drawBridges(g, tr); }
+
+// ---------- lap replays (ghosts): one sample every 100 ms of [x, y, angle], delta-encoded ----------
+function encRep(L) { if (!L || L.length < 5) return null; let px = 0, py = 0, pa = 0; const o = []; for (const [x, y, a] of L) { o.push(x - px, y - py, a - pa); px = x; py = y; pa = a; } return 'R1:' + o.join(','); }
+function decRep(s) { if (typeof s !== 'string' || !s.startsWith('R1:')) return null; const v = s.slice(3).split(',').map(Number), L = []; let x = 0, y = 0, a = 0; for (let i = 0; i + 2 < v.length; i += 3) { if (!isFinite(v[i]) || !isFinite(v[i + 1]) || !isFinite(v[i + 2])) return null; x += v[i]; y += v[i + 1]; a += v[i + 2]; L.push([x, y, a / 100]); } return L.length > 4 ? L : null; }

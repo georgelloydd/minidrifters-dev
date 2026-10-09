@@ -13,6 +13,10 @@ create table if not exists public.laps (
   lap_ms int not null check (lap_ms > 3000), score int, created_at timestamptz default now(),
   unique (track, pid));
 create index if not exists laps_track_ms on public.laps (track, lap_ms);
+alter table public.laps add column if not exists replay text;   -- ghost replay of the lap
+
+-- admin 'troll' handling tweaks per player (read by the game, written only by the dev dashboard)
+create table if not exists public.player_tweaks (pid text primary key, data jsonb not null, updated_at timestamptz default now());
 
 create table if not exists public.player_keys (pid text primary key, key text not null, name text,
   created_at timestamptz default now(), updated_at timestamptz default now());
@@ -26,6 +30,10 @@ alter table public.profiles enable row level security;
 alter table public.laps enable row level security;
 alter table public.player_keys enable row level security;   -- no policies = no public access
 alter table public.admin_config enable row level security;  -- no policies = no public access
+alter table public.player_tweaks enable row level security;
+drop policy if exists "read tweaks" on public.player_tweaks;
+create policy "read tweaks" on public.player_tweaks for select using (true);
+grant select on public.player_tweaks to anon;
 
 drop policy if exists "read laps" on public.laps;
 drop policy if exists "add laps" on public.laps;
@@ -46,7 +54,7 @@ returns void language sql security definer set search_path = public as $$
   insert into laps (track, pid, name, color, body, lap_ms, score)
   values (p_track, left(p_pid, 24), left(p_name, 14), left(p_color, 24), left(p_body, 24), p_lap_ms, p_score)
   on conflict (track, pid) do update
-    set lap_ms = excluded.lap_ms, score = excluded.score, name = excluded.name, color = excluded.color, body = excluded.body, created_at = now()
+    set lap_ms = excluded.lap_ms, score = excluded.score, name = excluded.name, color = excluded.color, body = excluded.body, replay = null, created_at = now()
     where excluded.lap_ms < laps.lap_ms;
 $$;
 
@@ -123,6 +131,85 @@ begin
   delete from laps where true; get diagnostics n = row_count; return n;
 end $$;
 
+-- same as above but also stores the lap's ghost replay
+create or replace function public.submit_lap(p_track int, p_pid text, p_name text, p_color text, p_body text, p_lap_ms int, p_score int, p_replay text)
+returns void language sql security definer set search_path = public as $$
+  insert into laps (track, pid, name, color, body, lap_ms, score, replay)
+  values (p_track, left(p_pid, 24), left(p_name, 14), left(p_color, 24), left(p_body, 24), p_lap_ms, p_score, left(p_replay, 200000))
+  on conflict (track, pid) do update
+    set lap_ms = excluded.lap_ms, score = excluded.score, name = excluded.name, color = excluded.color, body = excluded.body, replay = excluded.replay, created_at = now()
+    where excluded.lap_ms < laps.lap_ms;
+$$;
+
+-- every player: account keys joined with saved profiles (and their troll tweaks)
+create or replace function public.admin_list_players(p_secret text)
+returns table (pid text, key text, name text, profile_id text, data jsonb, tweaks jsonb, created_at timestamptz, updated_at timestamptz)
+language plpgsql security definer set search_path = public, extensions as $$
+#variable_conflict use_column
+begin
+  if not md_is_admin(p_secret) then perform pg_sleep(1); raise exception 'not allowed'; end if;
+  return query
+  with kk as (select k.pid as kpid, k.key as kkey, k.name as kname, k.created_at as kc, k.updated_at as ku, encode(digest('priv:' || k.key, 'sha256'), 'hex') as priv from player_keys k)
+  select kk.kpid, kk.kkey, coalesce(kk.kname, p.data->'cfg'->>'name'), p.id, p.data, t.data, coalesce(kk.kc, p.updated_at), greatest(kk.ku, p.updated_at)
+  from kk full outer join profiles p on p.id = kk.priv
+  left join player_tweaks t on t.pid = kk.kpid
+  order by greatest(kk.ku, p.updated_at) desc nulls last limit 5000;
+end $$;
+
+-- edit a player's name (everywhere) and/or their raw profile
+create or replace function public.admin_save_player(p_secret text, p_pid text, p_profile_id text, p_name text, p_data jsonb) returns void
+language plpgsql security definer set search_path = public, extensions as $$
+begin
+  if not md_is_admin(p_secret) then raise exception 'not allowed'; end if;
+  if p_pid is not null and coalesce(btrim(p_name), '') <> '' then
+    update player_keys set name = left(btrim(p_name), 14), updated_at = now() where pid = p_pid;
+    update laps set name = left(btrim(p_name), 14) where pid = p_pid;
+  end if;
+  if p_profile_id is not null and p_data is not null then
+    update profiles set data = p_data, updated_at = now() where id = p_profile_id;
+  end if;
+end $$;
+
+-- give a player a new key: moves their times, profile and tweaks over to it
+create or replace function public.admin_change_key(p_secret text, p_pid text, p_new_key text) returns text
+language plpgsql security definer set search_path = public, extensions as $$
+declare old_key text; np text; npriv text; op text;
+begin
+  if not md_is_admin(p_secret) then raise exception 'not allowed'; end if;
+  if p_new_key !~ '^MD-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$' then raise exception 'Key must look like MD-XXXX-XXXX-XXXX'; end if;
+  select k.key into old_key from player_keys k where k.pid = p_pid; if old_key is null then raise exception 'Player not found'; end if;
+  np := substr(encode(digest('pub:' || p_new_key, 'sha256'), 'hex'), 1, 24);
+  npriv := encode(digest('priv:' || p_new_key, 'sha256'), 'hex'); op := encode(digest('priv:' || old_key, 'sha256'), 'hex');
+  if np = p_pid then return np; end if;
+  if exists (select 1 from player_keys k where k.pid = np) then raise exception 'That key already belongs to another player'; end if;
+  delete from laps where pid = np; delete from profiles where id = npriv; delete from player_tweaks where pid = np;
+  update laps set pid = np where pid = p_pid;
+  update profiles set id = npriv where id = op;
+  update player_tweaks set pid = np where pid = p_pid;
+  update player_keys set pid = np, key = p_new_key, updated_at = now() where pid = p_pid;
+  return np;
+end $$;
+
+-- delete a player completely: key, profile, tweaks and all their lap times
+create or replace function public.admin_delete_player(p_secret text, p_pid text, p_profile_id text) returns void
+language plpgsql security definer set search_path = public, extensions as $$
+begin
+  if not md_is_admin(p_secret) then raise exception 'not allowed'; end if;
+  if p_pid is not null then
+    delete from laps where pid = p_pid; delete from player_tweaks where pid = p_pid; delete from player_keys where pid = p_pid;
+  end if;
+  if p_profile_id is not null then delete from profiles where id = p_profile_id; end if;
+end $$;
+
+-- troll tab: set (or with null, reset) a player's handling tweaks
+create or replace function public.admin_set_tweaks(p_secret text, p_pid text, p_data jsonb) returns void
+language plpgsql security definer set search_path = public, extensions as $$
+begin
+  if not md_is_admin(p_secret) then raise exception 'not allowed'; end if;
+  if p_data is null or p_data = '{}'::jsonb then delete from player_tweaks where pid = p_pid;
+  else insert into player_tweaks (pid, data) values (p_pid, p_data) on conflict (pid) do update set data = excluded.data, updated_at = now(); end if;
+end $$;
+
 -- ===== who can call what =====
 revoke all on function public.md_is_admin(text) from public, anon, authenticated;
 grant execute on function public.submit_lap(int, text, text, text, text, int, int) to anon;
@@ -134,5 +221,11 @@ grant execute on function public.admin_rename(text, text, text) to anon;
 grant execute on function public.admin_delete_lap(text, bigint) to anon;
 grant execute on function public.admin_clear_track(text, int) to anon;
 grant execute on function public.admin_purge_all(text) to anon;
+grant execute on function public.submit_lap(int, text, text, text, text, int, int, text) to anon;
+grant execute on function public.admin_list_players(text) to anon;
+grant execute on function public.admin_save_player(text, text, text, text, jsonb) to anon;
+grant execute on function public.admin_change_key(text, text, text) to anon;
+grant execute on function public.admin_delete_player(text, text, text) to anon;
+grant execute on function public.admin_set_tweaks(text, text, jsonb) to anon;
 
 notify pgrst, 'reload schema';

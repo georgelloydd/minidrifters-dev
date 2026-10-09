@@ -24,7 +24,7 @@
 <div id="app" class="hidden">
   <header>
     <div class="logo sm">MINI <span>DRIFTERS</span> <em>DEV</em></div>
-    <nav><button class="nv" data-tab="tracks">Track builder</button><button class="nv" data-tab="players">Players</button><button class="nv" data-tab="lb">Leaderboards</button><button class="nv" data-tab="deploy">Deploy game</button></nav>
+    <nav><button class="nv" data-tab="tracks">Track builder</button><button class="nv" data-tab="players">Players</button><button class="nv" data-tab="troll">Troll</button><button class="nv" data-tab="lb">Leaderboards</button><button class="nv" data-tab="deploy">Deploy game</button></nav>
     <div class="hright"><a id="gameLink" target="_blank" class="dim small"></a><span id="ghState" class="dot" title="GitHub token entered"></span><input id="ghTok" type="password" placeholder="Paste GitHub token to publish" autocomplete="off" spellcheck="false"><button id="lockBtn" class="mini">Lock</button></div>
   </header>
 
@@ -38,7 +38,7 @@
       <input type="file" id="bFile" accept=".json" class="hidden"><div id="bFrom" class="small dim"></div>
     </aside>
     <div id="bMain">
-      <div id="bBar"><button data-tool="select">Select <kbd>V</kbd></button><button data-tool="draw">Draw <kbd>D</kbd></button><button data-tool="start">Start <kbd>S</kbd></button><button data-tool="cp">Checkpoints <kbd>C</kbd></button><button data-tool="wall" title="Barriers (B)">Barriers</button><span class="sep"></span><button id="bUndo" title="Ctrl+Z">↶ Undo</button><button id="bRedo" title="Ctrl+Y">↷ Redo</button><button id="bFit" title="F">Fit</button><label class="chk"><input type="checkbox" id="bReal"> Realistic preview</label><span class="sep"></span><button id="bTest" class="red">▶ Test drive</button></div>
+      <div id="bBar"><button data-tool="select">Select <kbd>V</kbd></button><button data-tool="draw">Draw <kbd>D</kbd></button><button data-tool="start">Start <kbd>S</kbd></button><button data-tool="spawn">TT spawn <kbd>P</kbd></button><button data-tool="cp">Checkpoints <kbd>C</kbd></button><button data-tool="wall" title="Barriers (B)">Barriers</button><button data-tool="elev" title="Bridges & tunnels (E)">Bridge/Tunnel</button><span class="sep"></span><button id="bUndo" title="Ctrl+Z">↶ Undo</button><button id="bRedo" title="Ctrl+Y">↷ Redo</button><button id="bFit" title="F">Fit</button><label class="chk"><input type="checkbox" id="bReal"> Realistic preview</label><span class="sep"></span><button id="bTest" class="red">▶ Test drive</button></div>
       <div id="bStage"><canvas id="bcv"></canvas></div>
       <div id="bHint" class="small"></div>
     </div>
@@ -57,8 +57,9 @@
       <div class="ah">Direction</div><div class="row"><span id="pDir" class="small"></span><button id="pFlip" class="mini">⇄ Flip direction</button></div>
       <div class="ah">Checkpoints</div><div id="pCps" class="small"></div>
       <div class="row"><button id="pAuto" class="mini">Auto-place</button><input id="pAutoN" type="number" min="2" max="24" value="7" style="width:56px"><button id="pCpReset" class="mini">Default</button></div>
-      <div class="ah">Barriers</div><div id="pWalls" class="dim small"></div><div class="row"><button class="mini" id="pWallTool">Draw barriers</button><button class="mini" id="pWallClr">Clear all barriers</button></div>
-      <div class="ah">Theme</div><div id="pThemes" class="row wrap"></div>
+      <div class="ah">Barriers</div><div id="pWalls" class="dim small"></div><div class="row"><button class="mini" id="pWallTool">Draw barriers</button><button class="mini" id="pWallClr">Clear all barriers</button></div><label class="chk"><input type="checkbox" id="pWallSnap" checked> Stick to run-off edge (Alt = freehand)</label>
+      <div class="ah">Bridges &amp; tunnels</div><div id="pElev" class="dim small"></div><div class="row"><button class="mini" data-et="bridge">Bridge</button><button class="mini" data-et="tunnel">Tunnel</button><button class="mini" id="pElevClr">Clear all</button></div>
+      <div class="ah">Theme</div><div class="row"><span class="dim small">Scenery</span><select id="pScene"><option value="">Trees</option><option value="city">City buildings</option><option value="desert">Desert rocks &amp; cacti</option><option value="none">Nothing</option></select></div><div id="pThemes" class="row wrap"></div>
       <div id="pal" class="pal"><label>Grass<input type="color" id="c_grass"></label><label>Grass 2<input type="color" id="c_grass2"></label><label>Road<input type="color" id="c_road"></label><label>Run-off<input type="color" id="c_sand"></label><label>Trees<input type="color" id="c_tree0"></label><label>Trees 2<input type="color" id="c_tree1"></label></div>
       <div class="row"><label class="chk"><input type="checkbox" id="pNight"> Night lights</label><label class="chk"><input type="checkbox" id="pSnow"> Snow</label></div>
       <div class="ah">Checks</div><div id="pIssues" class="small"></div>
@@ -70,9 +71,17 @@
   </section>
 
   <section class="tab hidden" id="tab-players">
-    <div class="panel"><h2>Find a player</h2><p class="dim small">Search by name, part of their key, or player ID. Use this when someone forgot their player key: check it's really them, then send the key privately. Players show up here after they open the updated game once with online mode on.</p>
-      <div class="row"><input id="plQ" placeholder="Name, key or player ID (blank = most recent)" style="flex:1"><button id="plGo" class="red">Search</button><span id="plCount" class="dim small"></span></div>
-      <table><thead><tr><th>Name</th><th>Player key</th><th>Player ID</th><th>Best lap</th><th>Laps</th><th>Last seen</th><th></th></tr></thead><tbody id="plBody"></tbody></table></div>
+    <div class="panel"><h2>Players</h2><p class="dim small">Every account key and saved profile. Edit a name, key or the raw profile, or delete a player completely (key, profile, troll settings and all their leaderboard times).</p>
+      <div class="row"><input id="plQ" placeholder="Filter by name, key or player ID" style="flex:1"><button id="plGo" class="red">Refresh</button><span id="plCount" class="dim small"></span></div>
+      <table><thead><tr><th>Name</th><th>Player key</th><th>Player ID</th><th>Profile</th><th>Last seen</th><th></th></tr></thead><tbody id="plBody"></tbody></table></div>
+  </section>
+
+  <section class="tab hidden" id="tab-troll">
+    <div class="panel"><h2>Troll</h2><p class="dim small">Change one player's car handling. It reaches their game within about 15 seconds, even mid-race, and only affects them.</p>
+      <div class="row"><select id="trP" style="flex:1"></select><button id="trLoad" class="mini">Reload players</button></div>
+      <div id="trBox"></div>
+      <div class="row"><button id="trSave" class="red">Save &amp; apply</button><button id="trReset" class="mini">Reset to default</button></div>
+      <h2 style="margin-top:18px;font-size:16px">Currently trolled</h2><div id="trList" class="dim small"></div></div>
   </section>
 
   <section class="tab hidden" id="tab-lb">
@@ -90,6 +99,7 @@
       <button id="dpGo" class="big">DEPLOY GAME</button><div id="dpLog"></div></div>
   </section>
 </div>
+<div id="modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:60;align-items:center;justify-content:center"><div id="mBox" style="background:#15161b;border:1px solid #33343c;border-radius:8px;padding:16px;width:min(920px,95vw);max-height:94vh;overflow:auto"></div></div>
 <div id="toasts"></div>
 <script src="js/track.js"></script><script src="js/game-files.js"></script><script src="js/dev.js"></script><script src="js/builder.js"></script>
 <script src="js/f1import.js"></script><script src="js/build.js"></script><script src="js/version.js"></script>

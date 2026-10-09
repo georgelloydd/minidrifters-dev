@@ -1,10 +1,15 @@
 // ===== Track builder: draw / edit layouts, start line, direction, checkpoints, theme; test + publish =====
 const BLD = { list: [], pub: [], cur: 0, tool: 'select', v: { s: 0.2, x: 0, y: 0 }, undo: [], redo: [], hover: null, drag: null, stroke: null, real: false, bake: null, tr: null, issues: [], space: false };
 const THEMES = {
+  City: { grass: '#8b9097', grass2: '#959aa1', road: '#2f3136', sand: '#b4b7bb', tree: ['#3f6b35', '#4f8442'], scene: 'city' },
+  'City night': { grass: '#22252d', grass2: '#282c35', road: '#1d1e22', sand: '#3a3e48', tree: ['#1f4f3a', '#2b6a4c'], night: true, scene: 'city' },
+  Forest: { grass: '#2f5e2a', grass2: '#376b31', road: '#36383d', sand: '#8a7a55', tree: ['#1d4a1f', '#2a6229'] },
+  Coast: { grass: '#e3d3a0', grass2: '#ead9a8', road: '#3c3e44', sand: '#f1e4bc', tree: ['#3f8a5a', '#55a66d'] },
+  Canyon: { grass: '#c27a4a', grass2: '#cc8656', road: '#46392f', sand: '#d9a273', tree: ['#7a8a3a', '#93a34a'], scene: 'desert' },
   Sunset: { grass: '#4c8c3c', grass2: '#5a9c47', road: '#3a3c42', sand: '#d8c48f', tree: ['#2f6e2a', '#3f8a35'] },
   'Neon night': { grass: '#2b3346', grass2: '#323b52', road: '#26272d', sand: '#4a5068', tree: ['#1f6f8b', '#2d8fb0'], night: true },
   Snow: { grass: '#dfe8ef', grass2: '#eef3f7', road: '#4a4d55', sand: '#b9c6d2', tree: ['#2c5a3f', '#3c7452'], snow: true },
-  Desert: { grass: '#d9b878', grass2: '#e2c58c', road: '#4a4038', sand: '#c79a5a', tree: ['#7a8a3a', '#93a34a'] },
+  Desert: { grass: '#d9b878', grass2: '#e2c58c', road: '#4a4038', sand: '#c79a5a', tree: ['#7a8a3a', '#93a34a'], scene: 'desert' },
   'Autumn': { grass: '#7a6a2e', grass2: '#8a7a38', road: '#3b3a3c', sand: '#c9a46a', tree: ['#b5541c', '#d9822b'] },
   'Red night': { grass: '#1b1214', grass2: '#22171a', road: '#232327', sand: '#3a2226', tree: ['#7a1420', '#a81c2c'], night: true },
 };
@@ -24,7 +29,7 @@ async function BLD_init() {
 }
 function saveDraft() { try { localStorage.setItem('md_dev_tracks', JSON.stringify(BLD.list)); } catch (e) { if (!BLD._qw) { BLD._qw = 1; toast('Browser storage is full (screenshots are big). Publish to free space; drafts may not survive a reload.', 'err'); } } listUI(); }
 function edited(i) { return i >= BLD.pub.length || JSON.stringify(BLD.list[i]) !== JSON.stringify(BLD.pub[i]); }
-function layoutChanged(i) { const a = BLD.list[i], b = BLD.pub[i]; if (!b) return false; const k = o => JSON.stringify([o.pts, o.width, o.start, o.rev, o.cps, o.walls || []]); return k(a) !== k(b); }
+function layoutChanged(i) { const a = BLD.list[i], b = BLD.pub[i]; if (!b) return false; const k = o => JSON.stringify([o.pts, o.width, o.start, o.rev, o.cps, o.walls || [], o.elev || []]); return k(a) !== k(b); }
 function snap() { BLD.undo.push(JSON.stringify({ i: BLD.cur, d: cur() })); if (BLD.undo.length > 150) BLD.undo.shift(); BLD.redo = []; }
 function change(fn, noSnap) { if (!noSnap) snap(); fn(cur()); saveDraft(); rebuild(); panelUI(); }
 function undo(r) { const A = r ? BLD.redo : BLD.undo, B = r ? BLD.undo : BLD.redo; const s = A.pop(); if (!s) return; const o = JSON.parse(s); B.push(JSON.stringify({ i: o.i, d: BLD.list[o.i] })); BLD.list[o.i] = o.d; BLD.cur = o.i; saveDraft(); rebuild(); panelUI(); }
@@ -95,19 +100,20 @@ function draw() {
   if (BLD.tool === 'select' || BLD.tool === 'draw') { g.strokeStyle = 'rgba(255,42,42,.55)'; g.lineWidth = 1.5 * px; g.setLineDash([6 * px, 6 * px]); g.beginPath(); d.pts.forEach((p, i) => i ? g.lineTo(p[0] * WORLD_W, p[1] * WORLD_H) : g.moveTo(p[0] * WORLD_W, p[1] * WORLD_H)); g.closePath(); g.stroke(); g.setLineDash([]);
     d.pts.forEach((p, i) => { const hot = BLD.hover && BLD.hover.pt === i; g.save(); g.translate(p[0] * WORLD_W, p[1] * WORLD_H); g.scale(px, px); g.fillStyle = hot ? '#ff2a2a' : '#fff'; g.strokeStyle = hot ? '#fff' : '#ff2a2a'; g.lineWidth = 2.5; g.beginPath(); g.arc(0, 0, hot ? 9 : 7, 0, 7); g.fill(); g.stroke(); g.restore(); }); }
   if (BLD.stroke) { g.strokeStyle = '#ff2a2a'; g.lineWidth = 6 * px; g.lineJoin = 'round'; g.beginPath(); BLD.stroke.forEach((p, i) => i ? g.lineTo(p[0], p[1]) : g.moveTo(p[0], p[1])); g.stroke(); }
-  drawWalls(g, BLD.tr); wallHover(g); if (BLD.wstroke && BLD.wstroke.length) { g.save(); g.strokeStyle = '#ffb02e'; g.lineWidth = Math.max(11, 3 / BLD.v.s); g.lineCap = g.lineJoin = 'round'; g.beginPath(); BLD.wstroke.forEach((p, i) => i ? g.lineTo(p[0], p[1]) : g.moveTo(p[0], p[1])); g.stroke(); g.restore(); }
+  drawElevAll(g, BLD.tr, 0.5); drawSpawn(g); drawWalls(g, BLD.tr); wallHover(g); elevPreview(g); if (BLD.wstroke && BLD.wstroke.length) { g.save(); g.strokeStyle = '#ffb02e'; g.lineWidth = Math.max(11, 3 / BLD.v.s); g.lineCap = g.lineJoin = 'round'; g.beginPath(); (BLD.wsnap || BLD.wstroke).forEach((p, i) => i ? g.lineTo(p[0], p[1]) : g.moveTo(p[0], p[1])); g.stroke(); g.restore(); }
   drawAlignMarks(g, px);
   g.setTransform(1, 0, 0, 1, 0, 0);
 }
 
 // ---------- UI ----------
-const TOOLS = { wall: ['Barriers (B)', 'Click and drag to draw a barrier wall anywhere. Cars bounce off it in the game. Right-click a barrier to delete it.'], select: ['Select (V)', 'Drag the white points to reshape. Double-click the road to add a point, right-click a point to delete it. Drag empty space to pan, scroll to zoom.'], draw: ['Draw (D)', 'Click and drag one continuous loop. Let go and the track is built from your drawing. You drive in the direction you drew.'], start: ['Start (S)', 'Click anywhere on the road to move the start / finish line and grid there.'], cp: ['Checkpoints (C)', 'Click the road to add a gate. Drag a yellow gate along the road to move it, right-click to delete. Gates must be passed in order to count a lap.'] };
-function setTool(t) { BLD.tool = t; document.querySelectorAll('[data-tool]').forEach(b => b.classList.toggle('on', b.dataset.tool === t)); $('bHint').textContent = TOOLS[t][1]; cv().style.cursor = t === 'img' ? 'move' : t === 'draw' || t === 'wall' ? 'crosshair' : t === 'select' ? 'default' : 'copy'; draw(); }
+const TOOLS = { spawn: ['TT spawn (P)', 'Click where time trials should start. The car faces along the track. Right-click to remove it (time trials then start on the grid).'], elev: ['Bridge / tunnel (E)', 'Pick Bridge or Tunnel on the right, then drag along the road from where it starts to where it ends. Bridges go over the rest of the track, tunnels go under it. Right-click one to delete it.'], wall: ['Barriers (B)', 'Drag beside the road and the barrier sticks to the edge of the run-off, following every corner (hold Alt to draw freehand). Drag away from the road for a freehand wall. Right-click a barrier to delete it.'], select: ['Select (V)', 'Drag the white points to reshape. Double-click the road to add a point, right-click a point to delete it. Drag empty space to pan, scroll to zoom.'], draw: ['Draw (D)', 'Click and drag one continuous loop. Let go and the track is built from your drawing. You drive in the direction you drew.'], start: ['Start (S)', 'Click anywhere on the road to move the start / finish line and grid there.'], cp: ['Checkpoints (C)', 'Click the road to add a gate. Drag a yellow gate along the road to move it, right-click to delete. Gates must be passed in order to count a lap.'] };
+function setTool(t) { BLD.tool = t; document.querySelectorAll('[data-tool]').forEach(b => b.classList.toggle('on', b.dataset.tool === t)); $('bHint').textContent = TOOLS[t][1]; cv().style.cursor = t === 'img' ? 'move' : t === 'draw' || t === 'wall' || t === 'elev' || t === 'spawn' ? 'crosshair' : t === 'select' ? 'default' : 'copy'; draw(); }
 function listUI() {
   $('bList').innerHTML = BLD.list.map((t, i) => `<div class="ti${i === BLD.cur ? ' on' : ''}" data-i="${i}"><span class="tn">${i + 1}. ${esc(t.name)}</span>${i >= BLD.pub.length ? '<i class="bd new">NEW</i>' : edited(i) ? '<i class="bd ed">EDITED</i>' : ''}${t.hidden ? '<i class="bd hd">HIDDEN</i>' : ''}</div>`).join('');
   const dirty = BLD.list.some((t, i) => edited(i)) || BLD.list.length !== BLD.pub.length; $('bPub').classList.toggle('pulse', dirty); $('bDirty').textContent = dirty ? 'Unpublished changes (saved as drafts in this browser)' : 'Everything is published';
 }
 function panelUI() {
+  try { const E = cur().elev || [], nb = E.filter(e => e.t === 'bridge').length, nt = E.length - nb; $('pElev').textContent = E.length ? nb + ' bridge' + (nb === 1 ? '' : 's') + ', ' + nt + ' tunnel' + (nt === 1 ? '' : 's') + '.' : 'None yet. Choose one, then drag along the road.'; document.querySelectorAll('[data-et]').forEach(b => b.classList.toggle('on', b.dataset.et === (BLD.elevT || 'bridge'))); $('pElevClr').disabled = !E.length; $('pScene').value = (cur().th && cur().th.scene) || ''; $('pWallSnap').checked = BLD.wallSnap !== false; } catch (e) { }
   try { const n = (cur() && cur().walls || []).length; if ($('pWalls')) $('pWalls').textContent = n ? n + ' barrier' + (n > 1 ? 's' : '') + ' on this track.' : 'No barriers yet. Pick the Barriers tool (B) and drag on the map.'; if ($('pWallClr')) $('pWallClr').disabled = !n; } catch (e) { }
   const d = cur(), i = BLD.cur, th = d.th; $('pName').value = d.name; $('pW').value = d.width; $('pWv').textContent = d.width;
   ['grass', 'grass2', 'road', 'sand'].forEach(k => $('c_' + k).value = th[k]); $('c_tree0').value = th.tree[0]; $('c_tree1').value = th.tree[1]; $('pNight').checked = !!th.night; $('pSnow').checked = !!th.snow;
@@ -152,12 +158,18 @@ function bindBuilder() {
   $('pCpReset').onclick = () => change(d => delete d.cps);
   if ($('pWallClr')) $('pWallClr').onclick = () => { const n = (cur().walls || []).length; if (!n || !confirm('Delete all ' + n + ' barriers on this track?')) return; change(d => delete d.walls); };
   if ($('pWallTool')) $('pWallTool').onclick = () => setTool('wall');
+  $('pWallSnap').onchange = e => { BLD.wallSnap = e.target.checked; };
+  document.querySelectorAll('[data-et]').forEach(b => b.onclick = () => { BLD.elevT = b.dataset.et; setTool('elev'); panelUI(); });
+  $('pElevClr').onclick = () => { const n = (cur().elev || []).length; if (n && confirm('Remove all ' + n + ' bridges/tunnels?')) change(d => delete d.elev); };
+  $('pScene').onchange = e => { const v = e.target.value; change(d => { d.th = d.th || {}; if (v) d.th.scene = v; else delete d.th.scene; }); };
   $('pHide').onchange = e => change(d => { if (e.target.checked) d.hidden = true; else delete d.hidden; });
   $('pDel').onclick = () => { if (BLD.cur < BLD.pub.length || !confirm('Delete ' + cur().name + '?')) return; BLD.list.splice(BLD.cur, 1); saveDraft(); select(BLD.cur - 1); };
   $('pLbClear').onclick = () => clearTrack(BLD.cur);
   // canvas input
   c.oncontextmenu = e => { e.preventDefault(); const w = toWorld(e);
     if (BLD.tool === 'select') { const h = hitHandle(w); if (h >= 0) { if (cur().pts.length <= 4) return toast('A track needs at least 4 points.', 'err'); change(d => d.pts.splice(h, 1)); } }
+    if (BLD.tool === 'spawn') { if (cur().spawn) { change(d => delete d.spawn); toast('Spawn removed: time trials start on the grid.', 'ok'); } return; }
+    if (BLD.tool === 'elev') { const k = hitElev(w); if (k >= 0) { change(d => { d.elev.splice(k, 1); if (!d.elev.length) delete d.elev; }); toast('Removed.', 'ok'); } return; }
     if (BLD.tool === 'wall') { const k = hitWall(w); if (k >= 0) { BLD.hover = null; change(d => { d.walls.splice(k, 1); if (!d.walls.length) delete d.walls; }); toast('Barrier deleted.', 'ok'); } return; }
     if (BLD.tool === 'cp') { const k = hitGate(w); if (k >= 0) { if (BLD.tr.gates.length <= 2) return toast('Keep at least 2 checkpoints.', 'err'); snap(); explicitCps(); change(d => d.cps.splice(k, 1), true); } } };
   c.ondblclick = e => { if (BLD.tool !== 'select') return; const w = toWorld(e); if (onRoad(w) < 0) return; const P = cur().pts.map(p => [p[0] * WORLD_W, p[1] * WORLD_H]); let bi = 0, bd = 1e18; P.forEach((p, i) => { const q = segDist(w, p, P[(i + 1) % P.length]); if (q < bd) { bd = q; bi = i; } }); change(d => d.pts.splice(bi + 1, 0, norm(w[0], w[1]))); };
@@ -166,8 +178,10 @@ function bindBuilder() {
     if (e.button !== 0) return;
     if (BLD.tool === 'select') { const h = hitHandle(w); if (h >= 0) { snap(); BLD.drag = { pt: h }; } else BLD.drag = { pan: true, x: e.clientX, y: e.clientY, vx: BLD.v.x, vy: BLD.v.y }; }
     else if (BLD.tool === 'draw') BLD.stroke = [w];
-    else if (BLD.tool === 'wall') { BLD.wstroke = [w]; draw(); }
+    else if (BLD.tool === 'wall') { BLD.wstroke = [w]; BLD.wsnap = null; draw(); }
+    else if (BLD.tool === 'elev') { BLD.estroke = [w]; draw(); }
     else if (BLD.tool === 'start') { const i = onRoad(w); if (i < 0) return toast('Click on the road.', 'err'); change(d => d.start = norm(...BLD.tr.pts[i])); }
+    else if (BLD.tool === 'spawn') { change(d => d.spawn = { p: norm(w[0], w[1]) }); toast('Time trial spawn set.', 'ok'); }
     else if (BLD.tool === 'img') imgDown(w);
     else if (BLD.tool === 'cp') { const k = hitGate(w); if (k >= 0) { snap(); explicitCps(); BLD.drag = { gate: k }; } else { const i = onRoad(w); if (i < 0) return; if (i < BLD.tr.n * 0.03 || i > BLD.tr.n * 0.97) return toast('Too close to the start line.', 'err'); snap(); explicitCps(); change(d => d.cps.push(norm(...BLD.tr.pts[i])), true); } } };
   c.onpointermove = e => { const w = toWorld(e), D = BLD.drag;
@@ -175,16 +189,17 @@ function bindBuilder() {
     if (D && D.img) { imgMove(w); return; }
     if (D && D.pt !== undefined) { cur().pts[D.pt] = norm(w[0], w[1]); return rebuild(); }
     if (D && D.gate !== undefined) { const i = nearestFull(BLD.tr, w[0], w[1]).i; cur().cps[D.gate] = norm(...BLD.tr.pts[i]); return rebuild(); }
-    if (BLD.wstroke) { const l = BLD.wstroke[BLD.wstroke.length - 1]; if (Math.hypot(w[0] - l[0], w[1] - l[1]) > 8 / BLD.v.s) { BLD.wstroke.push(w); draw(); } return; }
+    if (BLD.wstroke) { const l = BLD.wstroke[BLD.wstroke.length - 1]; if (Math.hypot(w[0] - l[0], w[1] - l[1]) > 8 / BLD.v.s) { BLD.wstroke.push(w); BLD.wsnap = BLD.wallSnap !== false && !e.altKey ? snapWall(BLD.wstroke) : null; draw(); } return; }
+    if (BLD.estroke) { const l = BLD.estroke[BLD.estroke.length - 1]; if (Math.hypot(w[0] - l[0], w[1] - l[1]) > 8 / BLD.v.s) { BLD.estroke.push(w); draw(); } return; }
     if (BLD.tool === 'wall' && !D) { const k = hitWall(w); if (k !== (BLD.hover && BLD.hover.wall)) { BLD.hover = { wall: k }; BLD._hk = null; draw(); } return; }
     if (BLD.stroke) { const l = BLD.stroke[BLD.stroke.length - 1]; if (Math.hypot(w[0] - l[0], w[1] - l[1]) > 6 / BLD.v.s) { BLD.stroke.push(w); draw(); } return; }
     const hv = BLD.tool === 'select' ? { pt: hitHandle(w) } : BLD.tool === 'cp' ? { gate: hitGate(w) } : null; const k = JSON.stringify(hv); if (k !== BLD._hk) { BLD._hk = k; BLD.hover = hv; draw(); } };
-  c.onpointerup = e => { if (BLD.wstroke) { const S = BLD.wstroke; BLD.wstroke = null; finishWall(S, toWorld(e)); return; } const D = BLD.drag; BLD.drag = null; if (BLD.stroke) { const S = BLD.stroke; BLD.stroke = null; draw(); finishStroke(S); } else if (D && !D.pan) { saveDraft(); panelUI(); } };
+  c.onpointerup = e => { if (BLD.estroke) { const S = BLD.estroke; BLD.estroke = null; finishElev(S); return; } if (BLD.wstroke) { const S = BLD.wstroke; BLD.wstroke = null; BLD.wsnap = null; finishWall(S, toWorld(e), e.altKey); return; } const D = BLD.drag; BLD.drag = null; if (BLD.stroke) { const S = BLD.stroke; BLD.stroke = null; draw(); finishStroke(S); } else if (D && !D.pan) { saveDraft(); panelUI(); } };
   c.onwheel = e => { e.preventDefault(); if (BLD.tool === 'img' && imgWheel(e)) return; const r = c.getBoundingClientRect(), mx = e.clientX - r.left, my = e.clientY - r.top, f = Math.exp(-e.deltaY * 0.0015), s = Math.max(0.002, Math.min(4, BLD.v.s * f)); BLD.v.x = mx - (mx - BLD.v.x) * s / BLD.v.s; BLD.v.y = my - (my - BLD.v.y) * s / BLD.v.s; BLD.v.s = s; draw(); };
   addEventListener('resize', BLD_resize);
   addEventListener('keydown', e => { if ($('tab-tracks').classList.contains('hidden') || /INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName)) return;
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); undo(e.shiftKey); return; } if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') { e.preventDefault(); undo(true); return; }
-    if (e.code === 'Space') { BLD.space = true; e.preventDefault(); } const m = { v: 'select', d: 'draw', s: 'start', c: 'cp', i: 'img', b: 'wall' }[e.key.toLowerCase()]; if (m && !e.ctrlKey && !e.metaKey) setTool(m); if (e.key.toLowerCase() === 'f') fit();
+    if (e.code === 'Space') { BLD.space = true; e.preventDefault(); } const m = { v: 'select', d: 'draw', s: 'start', c: 'cp', i: 'img', b: 'wall', e: 'elev', p: 'spawn' }[e.key.toLowerCase()]; if (m && !e.ctrlKey && !e.metaKey) setTool(m); if (e.key.toLowerCase() === 'f') fit();
     if ((e.key === 'Delete' || e.key === 'Backspace') && BLD.hover && BLD.hover.pt >= 0 && cur().pts.length > 4) change(d => d.pts.splice(BLD.hover.pt, 1)); });
   addEventListener('keyup', e => { if (e.code === 'Space') BLD.space = false; });
 }
@@ -198,7 +213,7 @@ function setWorld(w, h, keep, centre) {
     const [ow, oh] = worldOf(d), c = centre || [ow / 2, oh / 2];
     if (keep) {
       const M = p => [R6((p[0] * ow - c[0] + w / 2) / w), R6((p[1] * oh - c[1] + h / 2) / h)];
-      d.pts = d.pts.map(M); if (d.start) d.start = M(d.start); if (Array.isArray(d.cps)) d.cps = d.cps.map(M); if (Array.isArray(d.walls)) d.walls = d.walls.map(w => w.map(M));
+      d.pts = d.pts.map(M); if (d.start) d.start = M(d.start); if (Array.isArray(d.cps)) d.cps = d.cps.map(M); if (Array.isArray(d.walls)) d.walls = d.walls.map(w => w.map(M)); if (d.spawn && d.spawn.p) d.spawn.p = M(d.spawn.p); if (Array.isArray(d.elev)) d.elev.forEach(e => ['a', 'm', 'b'].forEach(k => { if (e[k]) e[k] = M(e[k]); }));
       if (d.bg) { const q = M([d.bg.x, d.bg.y]); d.bg.x = q[0]; d.bg.y = q[1]; d.bg.w = R6(d.bg.w * ow / w); }
     }
     if (w === WORLD_DEF[0] && h === WORLD_DEF[1]) delete d.world; else d.world = [w, h];
@@ -235,11 +250,12 @@ function worldPanelUI() {
 // ---------- barriers ----------
 function wallN(w) { return [Math.round(Math.max(0, Math.min(1, w[0] / WORLD_W)) * 1e6) / 1e6, Math.round(Math.max(0, Math.min(1, w[1] / WORLD_H)) * 1e6) / 1e6]; }
 function simplifyLine(P, tol) { if (P.length < 3) return P.slice(); let md = 0, mi = 0; const a = P[0], b = P[P.length - 1]; for (let i = 1; i < P.length - 1; i++) { const d = segDist(P[i], a, b); if (d > md) { md = d; mi = i; } } if (md <= tol) return [a, b]; return simplifyLine(P.slice(0, mi + 1), tol).slice(0, -1).concat(simplifyLine(P.slice(mi), tol)); }
-function finishWall(S, last) {
+function finishWall(S, last, free) {
   if (last && S.length && Math.hypot(last[0] - S[S.length - 1][0], last[1] - S[S.length - 1][1]) > 1) S.push(last);
   let len = 0; for (let i = 1; i < S.length; i++) len += Math.hypot(S[i][0] - S[i - 1][0], S[i][1] - S[i - 1][1]);
   if (S.length < 2 || len < 40) { draw(); return toast('Drag further to draw a barrier.', 'err'); }
-  const pts = simplifyLine(S, Math.max(3, 2 / BLD.v.s)).map(wallN);
+  let snapped = false; if (!free && BLD.wallSnap !== false) { const sn = snapWall(S); if (sn) { S = sn; snapped = true; } }
+  const pts = simplifyLine(S, snapped ? 2.5 : Math.max(3, 2 / BLD.v.s)).map(wallN);
   if (pts.length < 2) { draw(); return; }
   change(d => { if (!Array.isArray(d.walls)) d.walls = []; d.walls.push(pts); });
 }
@@ -251,4 +267,38 @@ function hitWall(w) {
 function wallHover(g) {
   const k = BLD.tool === 'wall' && BLD.hover ? BLD.hover.wall : -1, L = k >= 0 && cur().walls && cur().walls[k]; if (!L) return;
   g.save(); g.strokeStyle = 'rgba(255,60,60,.9)'; g.lineWidth = Math.max(18, 5 / BLD.v.s); g.lineCap = g.lineJoin = 'round'; g.beginPath(); L.forEach((p, i) => i ? g.lineTo(p[0] * WORLD_W, p[1] * WORLD_H) : g.moveTo(p[0] * WORLD_W, p[1] * WORLD_H)); g.stroke(); g.restore();
+}
+
+// ---------- barriers stick to the run-off edge ----------
+function snapWall(S) {
+  const tr = BLD.tr; if (!tr || !S || S.length < 2) return null; const N = tr.n, ro = tr.w / 2 + 63; let side = 0, near = 0;
+  const ix = S.map(p => { const r = nearestFull(tr, p[0], p[1]), q = tr.pts[r.i], a = tr.dirs[r.i]; side += Math.sign((p[0] - q[0]) * -Math.sin(a) + (p[1] - q[1]) * Math.cos(a)); if (r.d < ro + 260) near++; return r.i; });
+  if (near < S.length * 0.6) return null; const sd = side >= 0 ? 1 : -1; let tot = 0;
+  for (let k = 1; k < ix.length; k++) { let d = (ix[k] - ix[k - 1]) % N; if (d > N / 2) d -= N; if (d < -N / 2) d += N; tot += d; }
+  const cnt = Math.min(N, Math.abs(tot)), dir = tot >= 0 ? 1 : -1; if (cnt < 3) return null; const out = [];
+  for (let k = 0; k <= cnt; k += 2) { const i = ((ix[0] + dir * k) % N + N) % N, q = tr.pts[i], a = tr.dirs[i]; out.push([q[0] - Math.sin(a) * ro * sd, q[1] + Math.cos(a) * ro * sd]); }
+  const ok = out.filter(p => nearestFull(tr, p[0], p[1]).d > ro - 25); // drop loops on the inside of tight hairpins
+  return ok.length >= 2 ? ok : null;
+}
+// ---------- bridges / tunnels ----------
+function finishElev(S) {
+  const tr = BLD.tr; draw(); if (!tr || S.length < 2) return; const r = S.map(p => nearestFull(tr, p[0], p[1]));
+  if (r.filter(x => x.d < tr.w * 1.2).length < r.length * 0.7) return toast('Drag along the road to mark a bridge or tunnel.', 'err');
+  const a = r[0].i, b = r[r.length - 1].i, m = r[Math.floor(r.length / 2)].i; if (Math.min((b - a + tr.n) % tr.n, (a - b + tr.n) % tr.n) < 8) return toast('Drag further along the road.', 'err');
+  const P = i => wallN(tr.pts[i]), t = BLD.elevT || 'bridge';
+  change(d => { if (!Array.isArray(d.elev)) d.elev = []; d.elev.push({ t, a: P(a), m: P(m), b: P(b) }); }); toast((t === 'bridge' ? 'Bridge' : 'Tunnel') + ' added.', 'ok');
+}
+function hitElev(w) {
+  const tr = BLD.tr; if (!tr || !tr.elev || !tr.elev.length) return -1; const r = nearestFull(tr, w[0], w[1]); if (r.d > tr.w) return -1;
+  for (const s of tr.elev) if ((r.i - s.i0 + tr.n) % tr.n <= s.len) return s.k; return -1;
+}
+function elevPreview(g) {
+  const S = BLD.estroke; if (!S || S.length < 2) return; g.save(); g.strokeStyle = (BLD.elevT || 'bridge') === 'bridge' ? 'rgba(80,190,255,.85)' : 'rgba(255,170,60,.85)'; g.lineWidth = Math.max(BLD.tr ? BLD.tr.w * 0.6 : 60, 3 / BLD.v.s); g.lineCap = g.lineJoin = 'round';
+  g.beginPath(); S.forEach((p, i) => i ? g.lineTo(p[0], p[1]) : g.moveTo(p[0], p[1])); g.stroke(); g.restore();
+}
+
+function drawSpawn(g) {
+  const sp = cur().spawn; if (!sp || !sp.p || !BLD.tr) return; const x = sp.p[0] * WORLD_W, y = sp.p[1] * WORLD_H, r = nearestFull(BLD.tr, x, y), a = BLD.tr.dirs[r.i], k = Math.max(1, 0.6 / BLD.v.s);
+  g.save(); g.translate(x, y); g.scale(k, k); g.rotate(a); g.fillStyle = 'rgba(40,220,120,.95)'; g.strokeStyle = '#fff'; g.lineWidth = 3; g.beginPath(); g.moveTo(40, 0); g.lineTo(-30, -22); g.lineTo(-16, 0); g.lineTo(-30, 22); g.closePath(); g.fill(); g.stroke();
+  g.rotate(-a); g.fillStyle = '#fff'; g.font = 'bold 15px sans-serif'; g.textAlign = 'center'; g.fillText('TT SPAWN', 0, -36); g.restore();
 }
