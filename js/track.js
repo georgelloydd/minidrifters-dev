@@ -17,7 +17,7 @@ function rnd(seed) { let s = seed >>> 0; return () => { s = (s * 1664525 + 10139
 function trackDef(x) { return x && typeof x === 'object' ? x : (TRACKS[x] || TRACKS[0]); }
 function nearIdx(pts, x, y) { let bi = 0, bd = 1e18; for (let i = 0; i < pts.length; i++) { const d = (pts[i][0] - x) ** 2 + (pts[i][1] - y) ** 2; if (d < bd) { bd = d; bi = i; } } return bi; }
 function buildTrack(x, noBake) {
-  useWorld(trackDef(x)); const def = trackDef(x), idx = typeof x === 'number' ? x : 0, cp = def.pts.map(p => [p[0] * WORLD_W, p[1] * WORLD_H]), raw = [];
+  fixDef(trackDef(x)); useWorld(trackDef(x)); const def = trackDef(x), idx = typeof x === 'number' ? x : 0, cp = def.pts.map(p => [p[0] * WORLD_W, p[1] * WORLD_H]), raw = [];
   for (let i = 0; i < cp.length; i++) { const p0 = cp[(i - 1 + cp.length) % cp.length], p1 = cp[i], p2 = cp[(i + 1) % cp.length], p3 = cp[(i + 2) % cp.length]; for (let k = 0; k < 60; k++) raw.push(crPoint(p0, p1, p2, p3, k / 60)); }
   // resample to even spacing (~12px)
   let L = 0; const cum = [0]; for (let i = 1; i <= raw.length; i++) { const a = raw[i - 1], b = raw[i % raw.length]; L += Math.hypot(b[0] - a[0], b[1] - a[1]); cum.push(L); }
@@ -30,7 +30,8 @@ function buildTrack(x, noBake) {
   // checkpoint gates: explicit positions projected onto the line, else 7 evenly spaced
   let gi = Array.isArray(def.cps) && def.cps.length ? def.cps.map(c => nearIdx(pts, c[0] * WORLD_W, c[1] * WORLD_H)) : [1, 2, 3, 4, 5, 6, 7].map(k => Math.floor(k * N / 8));
   gi = [...new Set(gi.filter(i => i > N * 0.02 && i < N * 0.98))].sort((a, b) => a - b);
-  const tr = { idx, def, W: WORLD_W, H: WORLD_H, name: def.name, w: def.width, pts, dirs, n: N, len: L, th: def.th, gates: gi.map((i, k) => ({ s: k + 1, i })) };
+  if (!gi.length) gi = [1, 2, 3, 4, 5, 6, 7].map(k => Math.floor(k * N / 8));
+  const tr = { walls: wallSegs(def), idx, def, W: WORLD_W, H: WORLD_H, name: def.name, w: def.width, pts, dirs, n: N, len: L, th: def.th, gates: gi.map((i, k) => ({ s: k + 1, i })) };
   tr.canvas = noBake ? null : bakeTrack(tr); return tr;
 }
 function pathTrack(g, tr) { g.beginPath(); tr.pts.forEach((p, i) => i ? g.lineTo(p[0], p[1]) : g.moveTo(p[0], p[1])); g.closePath(); }
@@ -89,7 +90,7 @@ function angDiff(a, b) { let d = a - b; while (d > Math.PI) d -= 2 * Math.PI; wh
 function nearestFull(tr, x, y) { let bi = 0, bd = 1e18; for (let i = 0; i < tr.n; i += 3) { const p = tr.pts[i], d = (p[0] - x) ** 2 + (p[1] - y) ** 2; if (d < bd) { bd = d; bi = i; } } return refine(tr, x, y, bi, 4); }
 function refine(tr, x, y, hint, win) { let bi = hint, bd = 1e18; for (let k = -win; k <= win; k++) { const i = (hint + k + tr.n) % tr.n, p = tr.pts[i], d = (p[0] - x) ** 2 + (p[1] - y) ** 2; if (d < bd) { bd = d; bi = i; } } return { i: bi, d: Math.sqrt(bd) }; }
 function nearest(tr, x, y, hint) { const r = refine(tr, x, y, hint, 30); return r.d > tr.w * 1.6 ? nearestFull(tr, x, y) : r; }
-function gridSlot(tr, s) { const i = (tr.n - 6 - Math.floor(s / 2) * 7) % tr.n, p = tr.pts[i], a = tr.dirs[i], side = s % 2 ? 1 : -1, off = side * tr.w * 0.22; return { x: p[0] - Math.sin(a) * off, y: p[1] + Math.cos(a) * off, a, i }; }
+function gridSlot(tr, s) { const i = (((tr.n - 6 - Math.floor(s / 2) * 7) % tr.n) + tr.n) % tr.n, p = tr.pts[i], a = tr.dirs[i], side = s % 2 ? 1 : -1, off = side * tr.w * 0.22; return { x: p[0] - Math.sin(a) * off, y: p[1] + Math.cos(a) * off, a, i }; }
 
 // ===== Real-circuit scenery: a north-up map screenshot placed under the track (def.bg) =====
 // bg = { src, x, y (centre, 0-1 of world), w (width, 0-1 of world), rot (radians), mode: 'stylised' | 'photo', bmin (building detection 0.3-0.8) }
@@ -171,4 +172,55 @@ function drawRoadLive(g, tr, x0, y0, x1, y1) {
   if (vis[0]) { g.save(); g.translate(p0[0], p0[1]); g.rotate(a0); for (let r = 0; r < 2; r++) for (let k = 0; k < 10; k++) { g.fillStyle = (r + k) % 2 ? '#111' : '#fff'; g.fillRect(-sq + r * sq, -tr.w / 2 + k * sq, sq, sq); } g.restore();
     for (let s = 0; s < 8; s++) { const gp = gridSlot(tr, s); g.save(); g.translate(gp.x, gp.y); g.rotate(gp.a); g.strokeStyle = 'rgba(255,255,255,.6)'; g.lineWidth = 3; g.beginPath(); g.moveTo(34, -24); g.lineTo(40, -24); g.lineTo(40, 24); g.lineTo(34, 24); g.stroke(); g.restore(); } }
   g.restore();
+}
+
+// ---------- safety: repair broken / partial track data so a bad tracks.json can't crash the game ----------
+const DEF_TH = { grass: '#4c8c3c', grass2: '#5a9c47', road: '#3a3c42', sand: '#d8c48f', tree: ['#2f6e2a', '#3f8a35'] };
+const finPt = p => Array.isArray(p) && p.length >= 2 && p[0] !== null && p[1] !== null && isFinite(p[0]) && isFinite(p[1]);
+function fixDef(d) {
+  if (!d || d._ok) return d;
+  if (!Array.isArray(d.pts)) d.pts = [];
+  d.pts = d.pts.filter(finPt).map(p => [Math.max(0, Math.min(1, +p[0])), Math.max(0, Math.min(1, +p[1]))]);
+  if (d.pts.length < 4) d.pts = TRACKS[0] && TRACKS[0] !== d && TRACKS[0].pts.length >= 4 ? TRACKS[0].pts.map(p => p.slice()) : [[0.2, 0.3], [0.8, 0.3], [0.8, 0.7], [0.2, 0.7]];
+  d.width = Math.max(60, Math.min(400, +d.width || 170));
+  d.name = String(d.name || 'Track').slice(0, 40);
+  const th = d.th && typeof d.th === 'object' ? d.th : {}; d.th = Object.assign({}, DEF_TH, th);
+  if (!Array.isArray(d.th.tree) || d.th.tree.length < 2) d.th.tree = DEF_TH.tree.slice();
+  if (d.start && !finPt(d.start)) delete d.start;
+  if (d.cps && !Array.isArray(d.cps)) delete d.cps; else if (d.cps) d.cps = d.cps.filter(finPt);
+  if (d.walls && !Array.isArray(d.walls)) delete d.walls; else if (d.walls) d.walls = d.walls.filter(w => Array.isArray(w)).map(w => w.filter(finPt)).filter(w => w.length >= 2);
+  Object.defineProperty(d, '_ok', { value: true, enumerable: false, configurable: true, writable: true });
+  return d;
+}
+// ---------- barriers: def.walls = [[[nx,ny],[nx,ny],...], ...] (normalised polylines) ----------
+const WALL_R = 17;
+function wallSegs(def) {
+  const S = []; if (!def || !Array.isArray(def.walls)) return S;
+  for (const w of def.walls) { if (!Array.isArray(w)) continue; for (let i = 1; i < w.length; i++) { const a = w[i - 1], b = w[i]; if (!finPt(a) || !finPt(b)) continue;
+    const ax = a[0] * WORLD_W, ay = a[1] * WORLD_H, bx = b[0] * WORLD_W, by = b[1] * WORLD_H; if (Math.hypot(bx - ax, by - ay) < 1) continue;
+    S.push({ ax, ay, bx, by, x0: Math.min(ax, bx), y0: Math.min(ay, by), x1: Math.max(ax, bx), y1: Math.max(ay, by) }); } }
+  return S;
+}
+function drawWalls(g, tr) {
+  const S = tr && tr.walls; if (!S || !S.length) return;
+  g.save(); g.lineCap = 'round'; g.lineJoin = 'round';
+  g.beginPath(); for (const s of S) { g.moveTo(s.ax, s.ay); g.lineTo(s.bx, s.by); }
+  g.strokeStyle = 'rgba(0,0,0,.35)'; g.lineWidth = 16; g.stroke();
+  g.strokeStyle = '#c9ced6'; g.lineWidth = 11; g.stroke();
+  g.setLineDash([22, 22]); g.strokeStyle = tr.th && tr.th.night ? '#ff2fb0' : '#d8262f'; g.lineWidth = 5; g.stroke(); g.setLineDash([]);
+  g.restore();
+}
+function wallCollide(c, tr) {
+  const S = tr && tr.walls; if (!S || !S.length) return false; let hit = false;
+  for (const s of S) {
+    if (c.x < s.x0 - WALL_R || c.x > s.x1 + WALL_R || c.y < s.y0 - WALL_R || c.y > s.y1 + WALL_R) continue;
+    const dx = s.bx - s.ax, dy = s.by - s.ay, L2 = dx * dx + dy * dy, t = Math.max(0, Math.min(1, ((c.x - s.ax) * dx + (c.y - s.ay) * dy) / L2));
+    const qx = s.ax + dx * t, qy = s.ay + dy * t; let nx = c.x - qx, ny = c.y - qy, d = Math.hypot(nx, ny);
+    if (d >= WALL_R) continue;
+    if (d < 1e-3) { const l = Math.sqrt(L2); nx = -dy / l; ny = dx / l; if (nx * c.vx + ny * c.vy > 0) { nx = -nx; ny = -ny; } } else { nx /= d; ny /= d; }
+    c.x = qx + nx * WALL_R; c.y = qy + ny * WALL_R;
+    const vn = c.vx * nx + c.vy * ny; if (vn < 0) { c.vx -= 1.4 * vn * nx; c.vy -= 1.4 * vn * ny; c.vx *= 0.82; c.vy *= 0.82; c.wallHit = Math.max(c.wallHit || 0, -vn); }
+    hit = true;
+  }
+  return hit;
 }

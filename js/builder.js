@@ -24,7 +24,7 @@ async function BLD_init() {
 }
 function saveDraft() { try { localStorage.setItem('md_dev_tracks', JSON.stringify(BLD.list)); } catch (e) { if (!BLD._qw) { BLD._qw = 1; toast('Browser storage is full (screenshots are big). Publish to free space; drafts may not survive a reload.', 'err'); } } listUI(); }
 function edited(i) { return i >= BLD.pub.length || JSON.stringify(BLD.list[i]) !== JSON.stringify(BLD.pub[i]); }
-function layoutChanged(i) { const a = BLD.list[i], b = BLD.pub[i]; if (!b) return false; const k = o => JSON.stringify([o.pts, o.width, o.start, o.rev, o.cps]); return k(a) !== k(b); }
+function layoutChanged(i) { const a = BLD.list[i], b = BLD.pub[i]; if (!b) return false; const k = o => JSON.stringify([o.pts, o.width, o.start, o.rev, o.cps, o.walls || []]); return k(a) !== k(b); }
 function snap() { BLD.undo.push(JSON.stringify({ i: BLD.cur, d: cur() })); if (BLD.undo.length > 150) BLD.undo.shift(); BLD.redo = []; }
 function change(fn, noSnap) { if (!noSnap) snap(); fn(cur()); saveDraft(); rebuild(); panelUI(); }
 function undo(r) { const A = r ? BLD.redo : BLD.undo, B = r ? BLD.undo : BLD.redo; const s = A.pop(); if (!s) return; const o = JSON.parse(s); B.push(JSON.stringify({ i: o.i, d: BLD.list[o.i] })); BLD.list[o.i] = o.d; BLD.cur = o.i; saveDraft(); rebuild(); panelUI(); }
@@ -95,18 +95,20 @@ function draw() {
   if (BLD.tool === 'select' || BLD.tool === 'draw') { g.strokeStyle = 'rgba(255,42,42,.55)'; g.lineWidth = 1.5 * px; g.setLineDash([6 * px, 6 * px]); g.beginPath(); d.pts.forEach((p, i) => i ? g.lineTo(p[0] * WORLD_W, p[1] * WORLD_H) : g.moveTo(p[0] * WORLD_W, p[1] * WORLD_H)); g.closePath(); g.stroke(); g.setLineDash([]);
     d.pts.forEach((p, i) => { const hot = BLD.hover && BLD.hover.pt === i; g.save(); g.translate(p[0] * WORLD_W, p[1] * WORLD_H); g.scale(px, px); g.fillStyle = hot ? '#ff2a2a' : '#fff'; g.strokeStyle = hot ? '#fff' : '#ff2a2a'; g.lineWidth = 2.5; g.beginPath(); g.arc(0, 0, hot ? 9 : 7, 0, 7); g.fill(); g.stroke(); g.restore(); }); }
   if (BLD.stroke) { g.strokeStyle = '#ff2a2a'; g.lineWidth = 6 * px; g.lineJoin = 'round'; g.beginPath(); BLD.stroke.forEach((p, i) => i ? g.lineTo(p[0], p[1]) : g.moveTo(p[0], p[1])); g.stroke(); }
+  drawWalls(g, BLD.tr); wallHover(g); if (BLD.wstroke && BLD.wstroke.length) { g.save(); g.strokeStyle = '#ffb02e'; g.lineWidth = Math.max(11, 3 / BLD.v.s); g.lineCap = g.lineJoin = 'round'; g.beginPath(); BLD.wstroke.forEach((p, i) => i ? g.lineTo(p[0], p[1]) : g.moveTo(p[0], p[1])); g.stroke(); g.restore(); }
   drawAlignMarks(g, px);
   g.setTransform(1, 0, 0, 1, 0, 0);
 }
 
 // ---------- UI ----------
-const TOOLS = { select: ['Select (V)', 'Drag the white points to reshape. Double-click the road to add a point, right-click a point to delete it. Drag empty space to pan, scroll to zoom.'], draw: ['Draw (D)', 'Click and drag one continuous loop. Let go and the track is built from your drawing. You drive in the direction you drew.'], start: ['Start (S)', 'Click anywhere on the road to move the start / finish line and grid there.'], cp: ['Checkpoints (C)', 'Click the road to add a gate. Drag a yellow gate along the road to move it, right-click to delete. Gates must be passed in order to count a lap.'] };
-function setTool(t) { BLD.tool = t; document.querySelectorAll('[data-tool]').forEach(b => b.classList.toggle('on', b.dataset.tool === t)); $('bHint').textContent = TOOLS[t][1]; cv().style.cursor = t === 'img' ? 'move' : t === 'draw' ? 'crosshair' : t === 'select' ? 'default' : 'copy'; draw(); }
+const TOOLS = { wall: ['Barriers (B)', 'Click and drag to draw a barrier wall anywhere. Cars bounce off it in the game. Right-click a barrier to delete it.'], select: ['Select (V)', 'Drag the white points to reshape. Double-click the road to add a point, right-click a point to delete it. Drag empty space to pan, scroll to zoom.'], draw: ['Draw (D)', 'Click and drag one continuous loop. Let go and the track is built from your drawing. You drive in the direction you drew.'], start: ['Start (S)', 'Click anywhere on the road to move the start / finish line and grid there.'], cp: ['Checkpoints (C)', 'Click the road to add a gate. Drag a yellow gate along the road to move it, right-click to delete. Gates must be passed in order to count a lap.'] };
+function setTool(t) { BLD.tool = t; document.querySelectorAll('[data-tool]').forEach(b => b.classList.toggle('on', b.dataset.tool === t)); $('bHint').textContent = TOOLS[t][1]; cv().style.cursor = t === 'img' ? 'move' : t === 'draw' || t === 'wall' ? 'crosshair' : t === 'select' ? 'default' : 'copy'; draw(); }
 function listUI() {
   $('bList').innerHTML = BLD.list.map((t, i) => `<div class="ti${i === BLD.cur ? ' on' : ''}" data-i="${i}"><span class="tn">${i + 1}. ${esc(t.name)}</span>${i >= BLD.pub.length ? '<i class="bd new">NEW</i>' : edited(i) ? '<i class="bd ed">EDITED</i>' : ''}${t.hidden ? '<i class="bd hd">HIDDEN</i>' : ''}</div>`).join('');
   const dirty = BLD.list.some((t, i) => edited(i)) || BLD.list.length !== BLD.pub.length; $('bPub').classList.toggle('pulse', dirty); $('bDirty').textContent = dirty ? 'Unpublished changes (saved as drafts in this browser)' : 'Everything is published';
 }
 function panelUI() {
+  try { const n = (cur() && cur().walls || []).length; if ($('pWalls')) $('pWalls').textContent = n ? n + ' barrier' + (n > 1 ? 's' : '') + ' on this track.' : 'No barriers yet. Pick the Barriers tool (B) and drag on the map.'; if ($('pWallClr')) $('pWallClr').disabled = !n; } catch (e) { }
   const d = cur(), i = BLD.cur, th = d.th; $('pName').value = d.name; $('pW').value = d.width; $('pWv').textContent = d.width;
   ['grass', 'grass2', 'road', 'sand'].forEach(k => $('c_' + k).value = th[k]); $('c_tree0').value = th.tree[0]; $('c_tree1').value = th.tree[1]; $('pNight').checked = !!th.night; $('pSnow').checked = !!th.snow;
   $('pCps').textContent = (BLD.tr ? BLD.tr.gates.length : 0) + (d.cps ? ' gates (custom)' : ' gates (automatic)'); $('pDir').textContent = d.rev ? 'Reversed' : 'As drawn';
@@ -148,12 +150,15 @@ function bindBuilder() {
   $('pFlip').onclick = () => change(d => { if (d.rev) delete d.rev; else d.rev = true; });
   $('pAuto').onclick = () => { const N = Math.max(2, Math.min(24, +$('pAutoN').value || 7)), tr = BLD.tr; change(d => d.cps = Array.from({ length: N }, (_, k) => norm(...tr.pts[Math.floor((k + 1) * tr.n / (N + 1))]))); };
   $('pCpReset').onclick = () => change(d => delete d.cps);
+  if ($('pWallClr')) $('pWallClr').onclick = () => { const n = (cur().walls || []).length; if (!n || !confirm('Delete all ' + n + ' barriers on this track?')) return; change(d => delete d.walls); };
+  if ($('pWallTool')) $('pWallTool').onclick = () => setTool('wall');
   $('pHide').onchange = e => change(d => { if (e.target.checked) d.hidden = true; else delete d.hidden; });
   $('pDel').onclick = () => { if (BLD.cur < BLD.pub.length || !confirm('Delete ' + cur().name + '?')) return; BLD.list.splice(BLD.cur, 1); saveDraft(); select(BLD.cur - 1); };
   $('pLbClear').onclick = () => clearTrack(BLD.cur);
   // canvas input
   c.oncontextmenu = e => { e.preventDefault(); const w = toWorld(e);
     if (BLD.tool === 'select') { const h = hitHandle(w); if (h >= 0) { if (cur().pts.length <= 4) return toast('A track needs at least 4 points.', 'err'); change(d => d.pts.splice(h, 1)); } }
+    if (BLD.tool === 'wall') { const k = hitWall(w); if (k >= 0) { BLD.hover = null; change(d => { d.walls.splice(k, 1); if (!d.walls.length) delete d.walls; }); toast('Barrier deleted.', 'ok'); } return; }
     if (BLD.tool === 'cp') { const k = hitGate(w); if (k >= 0) { if (BLD.tr.gates.length <= 2) return toast('Keep at least 2 checkpoints.', 'err'); snap(); explicitCps(); change(d => d.cps.splice(k, 1), true); } } };
   c.ondblclick = e => { if (BLD.tool !== 'select') return; const w = toWorld(e); if (onRoad(w) < 0) return; const P = cur().pts.map(p => [p[0] * WORLD_W, p[1] * WORLD_H]); let bi = 0, bd = 1e18; P.forEach((p, i) => { const q = segDist(w, p, P[(i + 1) % P.length]); if (q < bd) { bd = q; bi = i; } }); change(d => d.pts.splice(bi + 1, 0, norm(w[0], w[1]))); };
   c.onpointerdown = e => { c.setPointerCapture(e.pointerId); const w = toWorld(e);
@@ -161,6 +166,7 @@ function bindBuilder() {
     if (e.button !== 0) return;
     if (BLD.tool === 'select') { const h = hitHandle(w); if (h >= 0) { snap(); BLD.drag = { pt: h }; } else BLD.drag = { pan: true, x: e.clientX, y: e.clientY, vx: BLD.v.x, vy: BLD.v.y }; }
     else if (BLD.tool === 'draw') BLD.stroke = [w];
+    else if (BLD.tool === 'wall') { BLD.wstroke = [w]; draw(); }
     else if (BLD.tool === 'start') { const i = onRoad(w); if (i < 0) return toast('Click on the road.', 'err'); change(d => d.start = norm(...BLD.tr.pts[i])); }
     else if (BLD.tool === 'img') imgDown(w);
     else if (BLD.tool === 'cp') { const k = hitGate(w); if (k >= 0) { snap(); explicitCps(); BLD.drag = { gate: k }; } else { const i = onRoad(w); if (i < 0) return; if (i < BLD.tr.n * 0.03 || i > BLD.tr.n * 0.97) return toast('Too close to the start line.', 'err'); snap(); explicitCps(); change(d => d.cps.push(norm(...BLD.tr.pts[i])), true); } } };
@@ -169,14 +175,16 @@ function bindBuilder() {
     if (D && D.img) { imgMove(w); return; }
     if (D && D.pt !== undefined) { cur().pts[D.pt] = norm(w[0], w[1]); return rebuild(); }
     if (D && D.gate !== undefined) { const i = nearestFull(BLD.tr, w[0], w[1]).i; cur().cps[D.gate] = norm(...BLD.tr.pts[i]); return rebuild(); }
+    if (BLD.wstroke) { const l = BLD.wstroke[BLD.wstroke.length - 1]; if (Math.hypot(w[0] - l[0], w[1] - l[1]) > 8 / BLD.v.s) { BLD.wstroke.push(w); draw(); } return; }
+    if (BLD.tool === 'wall' && !D) { const k = hitWall(w); if (k !== (BLD.hover && BLD.hover.wall)) { BLD.hover = { wall: k }; BLD._hk = null; draw(); } return; }
     if (BLD.stroke) { const l = BLD.stroke[BLD.stroke.length - 1]; if (Math.hypot(w[0] - l[0], w[1] - l[1]) > 6 / BLD.v.s) { BLD.stroke.push(w); draw(); } return; }
     const hv = BLD.tool === 'select' ? { pt: hitHandle(w) } : BLD.tool === 'cp' ? { gate: hitGate(w) } : null; const k = JSON.stringify(hv); if (k !== BLD._hk) { BLD._hk = k; BLD.hover = hv; draw(); } };
-  c.onpointerup = () => { const D = BLD.drag; BLD.drag = null; if (BLD.stroke) { const S = BLD.stroke; BLD.stroke = null; draw(); finishStroke(S); } else if (D && !D.pan) { saveDraft(); panelUI(); } };
+  c.onpointerup = e => { if (BLD.wstroke) { const S = BLD.wstroke; BLD.wstroke = null; finishWall(S, toWorld(e)); return; } const D = BLD.drag; BLD.drag = null; if (BLD.stroke) { const S = BLD.stroke; BLD.stroke = null; draw(); finishStroke(S); } else if (D && !D.pan) { saveDraft(); panelUI(); } };
   c.onwheel = e => { e.preventDefault(); if (BLD.tool === 'img' && imgWheel(e)) return; const r = c.getBoundingClientRect(), mx = e.clientX - r.left, my = e.clientY - r.top, f = Math.exp(-e.deltaY * 0.0015), s = Math.max(0.002, Math.min(4, BLD.v.s * f)); BLD.v.x = mx - (mx - BLD.v.x) * s / BLD.v.s; BLD.v.y = my - (my - BLD.v.y) * s / BLD.v.s; BLD.v.s = s; draw(); };
   addEventListener('resize', BLD_resize);
   addEventListener('keydown', e => { if ($('tab-tracks').classList.contains('hidden') || /INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName)) return;
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); undo(e.shiftKey); return; } if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') { e.preventDefault(); undo(true); return; }
-    if (e.code === 'Space') { BLD.space = true; e.preventDefault(); } const m = { v: 'select', d: 'draw', s: 'start', c: 'cp', i: 'img' }[e.key.toLowerCase()]; if (m && !e.ctrlKey && !e.metaKey) setTool(m); if (e.key.toLowerCase() === 'f') fit();
+    if (e.code === 'Space') { BLD.space = true; e.preventDefault(); } const m = { v: 'select', d: 'draw', s: 'start', c: 'cp', i: 'img', b: 'wall' }[e.key.toLowerCase()]; if (m && !e.ctrlKey && !e.metaKey) setTool(m); if (e.key.toLowerCase() === 'f') fit();
     if ((e.key === 'Delete' || e.key === 'Backspace') && BLD.hover && BLD.hover.pt >= 0 && cur().pts.length > 4) change(d => d.pts.splice(BLD.hover.pt, 1)); });
   addEventListener('keyup', e => { if (e.code === 'Space') BLD.space = false; });
 }
@@ -190,7 +198,7 @@ function setWorld(w, h, keep, centre) {
     const [ow, oh] = worldOf(d), c = centre || [ow / 2, oh / 2];
     if (keep) {
       const M = p => [R6((p[0] * ow - c[0] + w / 2) / w), R6((p[1] * oh - c[1] + h / 2) / h)];
-      d.pts = d.pts.map(M); if (d.start) d.start = M(d.start); if (Array.isArray(d.cps)) d.cps = d.cps.map(M);
+      d.pts = d.pts.map(M); if (d.start) d.start = M(d.start); if (Array.isArray(d.cps)) d.cps = d.cps.map(M); if (Array.isArray(d.walls)) d.walls = d.walls.map(w => w.map(M));
       if (d.bg) { const q = M([d.bg.x, d.bg.y]); d.bg.x = q[0]; d.bg.y = q[1]; d.bg.w = R6(d.bg.w * ow / w); }
     }
     if (w === WORLD_DEF[0] && h === WORLD_DEF[1]) delete d.world; else d.world = [w, h];
@@ -222,4 +230,25 @@ function worldPanelUI() {
   if (!$('pWW')) return; const d = cur(), [w, h] = worldOf(d), km = v => (v / PX_PER_M / 1000).toFixed(2);
   $('pWW').value = w; $('pWH').value = h; if (document.activeElement !== $('pKm')) $('pKm').value = d.geo && d.geo.km ? d.geo.km : BLD.tr ? km(BLD.tr.len) : '';
   $('pWInfo').textContent = `Map ${km(w)} × ${km(h)} km · lap ${BLD.tr ? km(BLD.tr.len) : '?'} km · road ${(d.width / PX_PER_M).toFixed(1)} m wide (car is about 4 m long)`;
+}
+
+// ---------- barriers ----------
+function wallN(w) { return [Math.round(Math.max(0, Math.min(1, w[0] / WORLD_W)) * 1e6) / 1e6, Math.round(Math.max(0, Math.min(1, w[1] / WORLD_H)) * 1e6) / 1e6]; }
+function simplifyLine(P, tol) { if (P.length < 3) return P.slice(); let md = 0, mi = 0; const a = P[0], b = P[P.length - 1]; for (let i = 1; i < P.length - 1; i++) { const d = segDist(P[i], a, b); if (d > md) { md = d; mi = i; } } if (md <= tol) return [a, b]; return simplifyLine(P.slice(0, mi + 1), tol).slice(0, -1).concat(simplifyLine(P.slice(mi), tol)); }
+function finishWall(S, last) {
+  if (last && S.length && Math.hypot(last[0] - S[S.length - 1][0], last[1] - S[S.length - 1][1]) > 1) S.push(last);
+  let len = 0; for (let i = 1; i < S.length; i++) len += Math.hypot(S[i][0] - S[i - 1][0], S[i][1] - S[i - 1][1]);
+  if (S.length < 2 || len < 40) { draw(); return toast('Drag further to draw a barrier.', 'err'); }
+  const pts = simplifyLine(S, Math.max(3, 2 / BLD.v.s)).map(wallN);
+  if (pts.length < 2) { draw(); return; }
+  change(d => { if (!Array.isArray(d.walls)) d.walls = []; d.walls.push(pts); });
+}
+function hitWall(w) {
+  const W = cur() && cur().walls; if (!Array.isArray(W)) return -1; const r = Math.max(14, 12 / BLD.v.s); let best = -1, bd = r;
+  W.forEach((L, k) => { for (let i = 1; i < L.length; i++) { const d = segDist(w, [L[i - 1][0] * WORLD_W, L[i - 1][1] * WORLD_H], [L[i][0] * WORLD_W, L[i][1] * WORLD_H]); if (d < bd) { bd = d; best = k; } } });
+  return best;
+}
+function wallHover(g) {
+  const k = BLD.tool === 'wall' && BLD.hover ? BLD.hover.wall : -1, L = k >= 0 && cur().walls && cur().walls[k]; if (!L) return;
+  g.save(); g.strokeStyle = 'rgba(255,60,60,.9)'; g.lineWidth = Math.max(18, 5 / BLD.v.s); g.lineCap = g.lineJoin = 'round'; g.beginPath(); L.forEach((p, i) => i ? g.lineTo(p[0] * WORLD_W, p[1] * WORLD_H) : g.moveTo(p[0] * WORLD_W, p[1] * WORLD_H)); g.stroke(); g.restore();
 }

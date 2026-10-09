@@ -1,3 +1,5 @@
+addEventListener('error', e => { console.error(e.error || e.message); try { toast('Error: ' + String((e.error && e.error.message) || e.message).slice(0, 160), 'err'); } catch (x) { } });
+addEventListener('unhandledrejection', e => { console.error(e.reason); try { toast('Error: ' + String((e.reason && e.reason.message) || e.reason).slice(0, 160), 'err'); } catch (x) { } });
 // ===== Mini Drifters dev site: access gate, players, leaderboard moderation, deploy =====
 // Security model: this site's code is public, so the gate is NOT what protects anything by itself.
 // Player keys + moderation are protected by Supabase functions that check the admin secret on the server.

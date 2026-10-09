@@ -38,7 +38,7 @@
       <input type="file" id="bFile" accept=".json" class="hidden"><div id="bFrom" class="small dim"></div>
     </aside>
     <div id="bMain">
-      <div id="bBar"><button data-tool="select">Select <kbd>V</kbd></button><button data-tool="draw">Draw <kbd>D</kbd></button><button data-tool="start">Start <kbd>S</kbd></button><button data-tool="cp">Checkpoints <kbd>C</kbd></button><span class="sep"></span><button id="bUndo" title="Ctrl+Z">↶ Undo</button><button id="bRedo" title="Ctrl+Y">↷ Redo</button><button id="bFit" title="F">Fit</button><label class="chk"><input type="checkbox" id="bReal"> Realistic preview</label><span class="sep"></span><button id="bTest" class="red">▶ Test drive</button></div>
+      <div id="bBar"><button data-tool="select">Select <kbd>V</kbd></button><button data-tool="draw">Draw <kbd>D</kbd></button><button data-tool="start">Start <kbd>S</kbd></button><button data-tool="cp">Checkpoints <kbd>C</kbd></button><button data-tool="wall" title="Barriers (B)">Barriers</button><span class="sep"></span><button id="bUndo" title="Ctrl+Z">↶ Undo</button><button id="bRedo" title="Ctrl+Y">↷ Redo</button><button id="bFit" title="F">Fit</button><label class="chk"><input type="checkbox" id="bReal"> Realistic preview</label><span class="sep"></span><button id="bTest" class="red">▶ Test drive</button></div>
       <div id="bStage"><canvas id="bcv"></canvas></div>
       <div id="bHint" class="small"></div>
     </div>
@@ -57,6 +57,7 @@
       <div class="ah">Direction</div><div class="row"><span id="pDir" class="small"></span><button id="pFlip" class="mini">⇄ Flip direction</button></div>
       <div class="ah">Checkpoints</div><div id="pCps" class="small"></div>
       <div class="row"><button id="pAuto" class="mini">Auto-place</button><input id="pAutoN" type="number" min="2" max="24" value="7" style="width:56px"><button id="pCpReset" class="mini">Default</button></div>
+      <div class="ah">Barriers</div><div id="pWalls" class="dim small"></div><div class="row"><button class="mini" id="pWallTool">Draw barriers</button><button class="mini" id="pWallClr">Clear all barriers</button></div>
       <div class="ah">Theme</div><div id="pThemes" class="row wrap"></div>
       <div id="pal" class="pal"><label>Grass<input type="color" id="c_grass"></label><label>Grass 2<input type="color" id="c_grass2"></label><label>Road<input type="color" id="c_road"></label><label>Run-off<input type="color" id="c_sand"></label><label>Trees<input type="color" id="c_tree0"></label><label>Trees 2<input type="color" id="c_tree1"></label></div>
       <div class="row"><label class="chk"><input type="checkbox" id="pNight"> Night lights</label><label class="chk"><input type="checkbox" id="pSnow"> Snow</label></div>
