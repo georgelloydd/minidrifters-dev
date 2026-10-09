@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow">
+<title>Mini Drifters · Dev</title><link rel="stylesheet" href="dev.css"></head>
+<body>
+<div id="gate">
+  <div class="gcard">
+    <div class="logo">MINI <span>DRIFTERS</span></div><div class="sub">DEV ACCESS</div>
+    <label>Supabase project URL<input id="gUrl" placeholder="https://xxxx.supabase.co" spellcheck="false"></label>
+    <label>Supabase publishable / anon key<input id="gKey" placeholder="sb_publishable_… or eyJ…" spellcheck="false"></label>
+    <div class="dim small" id="gAuto"></div>
+    <label>Admin secret key<input id="gSecret" type="password" autocomplete="current-password" placeholder="MDADMIN-…"></label>
+    <label class="chk"><input type="checkbox" id="gRem"> Stay unlocked until I close this tab</label>
+    <button id="gGo" class="big">UNLOCK</button>
+    <div id="gMsg" class="err"></div>
+    <details><summary>First-time setup (make a secret + SQL)</summary>
+      <p class="dim small">1. Press <b>Generate</b> (or type your own 16+ character secret in the box above and press <b>Use mine</b>). 2. Save the secret in your password manager. 3. Copy the SQL and run it in Supabase → SQL Editor. Running it again with a new secret changes the secret.</p>
+      <div class="row"><button id="gGen" class="mini">Generate secret</button><button id="gOwn" class="mini">Use mine</button></div>
+      <div id="gGenMsg" class="ok small"></div>
+      <div id="gSqlBox" class="hidden"><textarea id="gSql" readonly rows="7"></textarea><button id="gCopy" class="mini">Copy SQL</button></div>
+    </details>
+  </div>
+</div>
+
+<div id="app" class="hidden">
+  <header>
+    <div class="logo sm">MINI <span>DRIFTERS</span> <em>DEV</em></div>
+    <nav><button class="nv" data-tab="tracks">Track builder</button><button class="nv" data-tab="players">Players</button><button class="nv" data-tab="lb">Leaderboards</button><button class="nv" data-tab="deploy">Deploy game</button></nav>
+    <div class="hright"><a id="gameLink" target="_blank" class="dim small"></a><span id="ghState" class="dot" title="GitHub token entered"></span><input id="ghTok" type="password" placeholder="Paste GitHub token to publish" autocomplete="off" spellcheck="false"><button id="lockBtn" class="mini">Lock</button></div>
+  </header>
+
+  <section class="tab" id="tab-tracks">
+    <aside id="bSide">
+      <div class="ah">Tracks</div><div id="bList"></div>
+      <div class="row"><button id="bNew" class="mini">+ New</button><button id="bDup" class="mini">Duplicate</button></div>
+      <div class="ah">Publish</div><div id="bDirty" class="small dim"></div>
+      <button id="bPub" class="big">PUBLISH TO GAME</button>
+      <div class="row"><button id="bExport" class="mini">Export</button><button id="bImport" class="mini">Import</button><button id="bDiscard" class="mini">Discard drafts</button></div>
+      <input type="file" id="bFile" accept=".json" class="hidden"><div id="bFrom" class="small dim"></div>
+    </aside>
+    <div id="bMain">
+      <div id="bBar"><button data-tool="select">Select <kbd>V</kbd></button><button data-tool="draw">Draw <kbd>D</kbd></button><button data-tool="start">Start <kbd>S</kbd></button><button data-tool="cp">Checkpoints <kbd>C</kbd></button><span class="sep"></span><button id="bUndo" title="Ctrl+Z">↶ Undo</button><button id="bRedo" title="Ctrl+Y">↷ Redo</button><button id="bFit" title="F">Fit</button><label class="chk"><input type="checkbox" id="bReal"> Realistic preview</label><span class="sep"></span><button id="bTest" class="red">▶ Test drive</button></div>
+      <div id="bStage"><canvas id="bcv"></canvas></div>
+      <div id="bHint" class="small"></div>
+    </div>
+    <aside id="bProps">
+      <div class="ah" id="pIdx"></div>
+      <label>Name<input id="pName" maxlength="32"></label>
+      <label>Road width <b id="pWv"></b><input type="range" id="pW" min="100" max="260" step="5"></label>
+      <div class="ah">Direction</div><div class="row"><span id="pDir" class="small"></span><button id="pFlip" class="mini">⇄ Flip direction</button></div>
+      <div class="ah">Checkpoints</div><div id="pCps" class="small"></div>
+      <div class="row"><button id="pAuto" class="mini">Auto-place</button><input id="pAutoN" type="number" min="2" max="24" value="7" style="width:56px"><button id="pCpReset" class="mini">Default</button></div>
+      <div class="ah">Theme</div><div id="pThemes" class="row wrap"></div>
+      <div id="pal" class="pal"><label>Grass<input type="color" id="c_grass"></label><label>Grass 2<input type="color" id="c_grass2"></label><label>Road<input type="color" id="c_road"></label><label>Run-off<input type="color" id="c_sand"></label><label>Trees<input type="color" id="c_tree0"></label><label>Trees 2<input type="color" id="c_tree1"></label></div>
+      <div class="row"><label class="chk"><input type="checkbox" id="pNight"> Night lights</label><label class="chk"><input type="checkbox" id="pSnow"> Snow</label></div>
+      <div class="ah">Checks</div><div id="pIssues" class="small"></div>
+      <div id="pLbWarn" class="warn small hidden">Layout changed from the published version. Old lap times may not be comparable. <button id="pLbClear" class="mini red">Clear this leaderboard</button></div>
+      <div class="ah">Visibility</div>
+      <label class="chk" id="pHideRow"><input type="checkbox" id="pHide"> Hide from the game (keeps its leaderboard)</label>
+      <button id="pDel" class="mini red">Delete unpublished track</button>
+    </aside>
+  </section>
+
+  <section class="tab hidden" id="tab-players">
+    <div class="panel"><h2>Find a player</h2><p class="dim small">Search by name, part of their key, or player ID. Use this when someone forgot their player key: check it's really them, then send the key privately. Players show up here after they open the updated game once with online mode on.</p>
+      <div class="row"><input id="plQ" placeholder="Name, key or player ID (blank = most recent)" style="flex:1"><button id="plGo" class="red">Search</button><span id="plCount" class="dim small"></span></div>
+      <table><thead><tr><th>Name</th><th>Player key</th><th>Player ID</th><th>Best lap</th><th>Laps</th><th>Last seen</th><th></th></tr></thead><tbody id="plBody"></tbody></table></div>
+  </section>
+
+  <section class="tab hidden" id="tab-lb">
+    <div class="panel"><h2>Leaderboards</h2><p class="dim small">Remove cheated or broken lap times, or wipe a track's board after changing its layout.</p>
+      <div class="row"><select id="lbT"></select><button id="lbGo" class="mini">Refresh</button><span class="sep"></span><button id="lbClear" class="mini red">Clear whole leaderboard</button></div>
+      <table><thead><tr><th>#</th><th>Driver</th><th>Lap</th><th>Set</th><th></th></tr></thead><tbody id="lbBody"></tbody></table></div>
+  </section>
+
+  <section class="tab hidden" id="tab-deploy">
+    <div class="panel"><h2>Deploy the game</h2><p class="dim small">Pushes the game files bundled in this dev site (<b id="dpN"></b> files) to the game repo in one commit, then makes sure GitHub Pages is on. Your published tracks.json is never overwritten. The token in the top bar needs <b>Contents: Read and write</b> and <b>Pages: Read and write</b> on the game repo. It stays in this tab's memory only.</p>
+      <label>Game repo<input id="dpRepo" spellcheck="false"></label>
+      <label>Game URL <span class="dim">(blank = the repo's GitHub Pages address)</span><input id="dpUrl" spellcheck="false"></label>
+      <label>Commit message<input id="dpMsg" value="Update Mini Drifters"></label>
+      <label class="chk"><input type="checkbox" id="dpSb"> Write the Supabase settings into the game (<span id="dpSbInfo"></span>)</label>
+      <button id="dpGo" class="big">DEPLOY GAME</button><div id="dpLog"></div></div>
+  </section>
+</div>
+<div id="toasts"></div>
+<script src="js/track.js"></script><script src="js/game-files.js"></script><script src="js/dev.js"></script><script src="js/builder.js"></script>
+</body></html>
