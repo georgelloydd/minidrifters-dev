@@ -51,3 +51,28 @@ table{width:100%;border-collapse:collapse;margin-top:12px;background:var(--p);bo
 .geoBox h3{margin:0 0 4px}.geoBox input,.geoBox select{width:100%;box-sizing:border-box;margin:8px 0;background:#0a0a0c;color:#eee;border:1px solid #2a2a30;border-radius:5px;padding:8px}
 .geoBox .row{justify-content:flex-end;gap:8px}
 #pImgOpts label{display:block;margin:8px 0}#pImgOpts select,#pImgOpts input[type=range]{width:100%}
+
+/* ===== custom tick boxes + dropdowns ===== */
+input[type=checkbox]{-webkit-appearance:none;appearance:none;width:18px;height:18px;min-width:18px;margin:0 2px 0 0;padding:0;flex:none;border:1.5px solid #3a3a42;border-radius:4px;background:#0e0e10;display:inline-grid;place-content:center;cursor:pointer;vertical-align:middle;transition:background .12s,border-color .12s,box-shadow .12s}
+input[type=checkbox]:hover{border-color:var(--red)}
+input[type=checkbox]::before{content:"";width:11px;height:11px;clip-path:polygon(14% 44%,0 62%,42% 100%,100% 18%,84% 2%,41% 66%);background:#fff;transform:scale(0);transition:transform .12s}
+input[type=checkbox]:checked{background:var(--red);border-color:var(--red);box-shadow:0 0 10px rgba(255,42,42,.35)}
+input[type=checkbox]:checked::before{transform:scale(1)}
+input[type=checkbox]:focus-visible{outline:2px solid rgba(255,42,42,.55);outline-offset:2px}
+input[type=checkbox]:disabled{opacity:.4;cursor:default}
+.csel{position:relative;display:inline-block;vertical-align:middle;max-width:100%}
+.csel>select{position:absolute!important;left:0;top:0;width:100%!important;height:100%!important;min-width:0!important;margin:0!important;opacity:0!important;pointer-events:none!important}
+.csel-btn{-webkit-appearance:none;appearance:none;box-sizing:border-box;display:block;width:100%;margin:0;cursor:pointer;background:#0e0e10;border:1px solid var(--line);border-radius:6px;padding:8px 34px 8px 11px;color:#fff;font:inherit;font-weight:700;letter-spacing:0;text-transform:none;text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;position:relative;transition:border-color .12s,background .12s;min-height:36px}
+.csel-btn::after{content:"";position:absolute;right:13px;top:50%;width:7px;height:7px;border-right:2px solid var(--red);border-bottom:2px solid var(--red);transform:translateY(-70%) rotate(45deg);transition:transform .15s}
+.csel-btn:hover,.csel-btn:focus-visible,.csel.open .csel-btn{border-color:var(--red);outline:none;background:#121215}
+.csel.open .csel-btn::after{transform:translateY(-25%) rotate(-135deg)}
+.csel.dis{opacity:.5}.csel.dis .csel-btn{cursor:default}
+.csel-list{position:fixed;z-index:99999;background:#141416;border:1px solid var(--line);border-top:2px solid var(--red);border-radius:6px;padding:4px;overflow:auto;box-shadow:0 16px 44px rgba(0,0,0,.65);font-family:'Segoe UI',system-ui,-apple-system,Roboto,sans-serif;font-size:14px;max-width:92vw;user-select:none;animation:cselIn .12s ease-out}
+@keyframes cselIn{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}
+.csel-opt{padding:7px 12px;border-radius:4px;color:#d6d6dc;cursor:pointer;white-space:nowrap;font-weight:600}
+.csel-opt:hover{background:#232327;color:#fff}
+.csel-opt.sel{background:rgba(255,42,42,.16);color:#fff;box-shadow:inset 3px 0 0 var(--red)}
+.csel-opt.dis{opacity:.4;cursor:default}
+.csel-list::-webkit-scrollbar{width:8px}.csel-list::-webkit-scrollbar-thumb{background:#333;border-radius:4px}
+.csel{display:block;width:100%;margin-top:4px}
+.chk input[type=checkbox]{margin-right:4px}

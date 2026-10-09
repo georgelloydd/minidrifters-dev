@@ -295,3 +295,42 @@ async function deployServer() {
   } catch (e) { slog('✗ ' + e.message, 'err'); }
   finally { $('svGo').disabled = false; }
 }
+
+// ===== custom dropdowns: replaces the browser's native <select> look, keeps the real select underneath =====
+(function () {
+  const P = HTMLSelectElement.prototype, dV = Object.getOwnPropertyDescriptor(P, 'value'), dI = Object.getOwnPropertyDescriptor(P, 'selectedIndex');
+  let open = null;
+  const close = () => { if (!open) return; open.w.classList.remove('open'); open.list.remove(); open = null; };
+  const pick = (s, i) => { if (i < 0 || i >= s.options.length || s.options[i].disabled) return; if (s.selectedIndex !== i) { dI.set.call(s, i); s._csUpd(); s.dispatchEvent(new Event('input', { bubbles: true })); s.dispatchEvent(new Event('change', { bubbles: true })); } };
+  function enh(s) {
+    if (s.dataset.cs || s.multiple || s.size > 1 || !s.parentNode) return; s.dataset.cs = '1';
+    const w = document.createElement('div'); w.className = 'csel'; const b = document.createElement('button'); b.type = 'button'; b.className = 'csel-btn';
+    if (s.id) w.dataset.for = s.id; s.parentNode.insertBefore(w, s); w.appendChild(s); w.appendChild(b); s.tabIndex = -1;
+    const upd = () => { const o = s.options[s.selectedIndex]; b.textContent = o ? o.textContent : ''; b.disabled = s.disabled; w.classList.toggle('dis', s.disabled); w.classList.toggle('hidden', s.classList.contains('hidden')); w.style.display = s.style.display === 'none' ? 'none' : ''; };
+    s._csUpd = upd; upd();
+    Object.defineProperty(s, 'value', { configurable: true, get() { return dV.get.call(this); }, set(v) { dV.set.call(this, v); upd(); } });
+    Object.defineProperty(s, 'selectedIndex', { configurable: true, get() { return dI.get.call(this); }, set(v) { dI.set.call(this, v); upd(); } });
+    s.addEventListener('change', upd);
+    new MutationObserver(upd).observe(s, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ['disabled', 'selected', 'class', 'style'] });
+    b.addEventListener('keydown', e => { const k = e.key; if (k === 'ArrowDown' || k === 'ArrowUp') { e.preventDefault(); e.stopPropagation(); let i = s.selectedIndex; do { i += k === 'ArrowDown' ? 1 : -1; } while (i >= 0 && i < s.options.length && s.options[i].disabled); pick(s, i); if (open) { close(); b.click(); } } });
+    b.addEventListener('click', e => {
+      e.stopPropagation(); if (open && open.s === s) return close(); close(); if (s.disabled) return;
+      const list = document.createElement('div'); list.className = 'csel-list';
+      [...s.options].forEach((o, i) => { if (o.hidden) return; const it = document.createElement('div'); it.className = 'csel-opt' + (i === s.selectedIndex ? ' sel' : '') + (o.disabled ? ' dis' : ''); it.textContent = o.textContent;
+        it.addEventListener('mousedown', ev => { ev.preventDefault(); ev.stopPropagation(); if (o.disabled) return; pick(s, i); close(); b.focus(); }); list.appendChild(it); });
+      document.body.appendChild(list); const r = b.getBoundingClientRect(), below = innerHeight - r.bottom - 10, above = r.top - 10, h = Math.min(list.scrollHeight, 320);
+      list.style.minWidth = r.width + 'px'; list.style.left = Math.max(6, Math.min(r.left, innerWidth - list.offsetWidth - 6)) + 'px';
+      if (below < h && above > below) { list.style.bottom = (innerHeight - r.top + 4) + 'px'; list.style.maxHeight = Math.min(320, above) + 'px'; } else { list.style.top = (r.bottom + 4) + 'px'; list.style.maxHeight = Math.max(100, Math.min(320, below)) + 'px'; }
+      const cur = list.querySelector('.sel'); if (cur) cur.scrollIntoView({ block: 'nearest' });
+      w.classList.add('open'); open = { s, w, list };
+    });
+  }
+  document.addEventListener('mousedown', e => { if (open && !open.list.contains(e.target) && !open.w.contains(e.target)) close(); }, true);
+  document.addEventListener('scroll', e => { if (open && !open.list.contains(e.target)) close(); }, true);
+  document.addEventListener('keydown', e => { if (e.key === 'Escape' && open) { close(); e.stopPropagation(); e.preventDefault(); } }, true);
+  addEventListener('resize', close);
+  const scan = n => { if (n.tagName === 'SELECT') enh(n); else if (n.querySelectorAll) n.querySelectorAll('select').forEach(enh); };
+  const go = () => { scan(document.body); new MutationObserver(ms => { for (const m of ms) for (const n of m.addedNodes) if (n.nodeType === 1) scan(n); }).observe(document.body, { childList: true, subtree: true }); };
+  if (document.body) go(); else document.addEventListener('DOMContentLoaded', go);
+  window.cselRefresh = () => document.querySelectorAll('select').forEach(s => s._csUpd && s._csUpd());
+})();
