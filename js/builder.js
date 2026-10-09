@@ -20,9 +20,9 @@ const withSeed = (d, i) => Object.assign({}, d, { seed: d.seed || (i * 977 + 13)
 async function BLD_init() {
   const p = await loadPublished(); BLD.pub = p.list; let drafts = null; try { drafts = JSON.parse(localStorage.getItem('md_dev_tracks') || 'null'); } catch (e) { }
   BLD.list = Array.isArray(drafts) && drafts.length ? drafts : clone(BLD.pub); $('bFrom').textContent = 'Published tracks loaded from the ' + p.from + '.';
-  bindBuilder(); select(0); BLD_resize();
+  bindBuilder(); F1_init(); select(0); BLD_resize();
 }
-function saveDraft() { localStorage.setItem('md_dev_tracks', JSON.stringify(BLD.list)); listUI(); }
+function saveDraft() { try { localStorage.setItem('md_dev_tracks', JSON.stringify(BLD.list)); } catch (e) { if (!BLD._qw) { BLD._qw = 1; toast('Browser storage is full (screenshots are big). Publish to free space; drafts may not survive a reload.', 'err'); } } listUI(); }
 function edited(i) { return i >= BLD.pub.length || JSON.stringify(BLD.list[i]) !== JSON.stringify(BLD.pub[i]); }
 function layoutChanged(i) { const a = BLD.list[i], b = BLD.pub[i]; if (!b) return false; const k = o => JSON.stringify([o.pts, o.width, o.start, o.rev, o.cps]); return k(a) !== k(b); }
 function snap() { BLD.undo.push(JSON.stringify({ i: BLD.cur, d: cur() })); if (BLD.undo.length > 150) BLD.undo.shift(); BLD.redo = []; }
@@ -75,6 +75,7 @@ function draw() {
     g.lineJoin = g.lineCap = 'round'; pathTrack(g, tr); g.strokeStyle = th.sand; g.lineWidth = tr.w + 80; g.stroke(); g.strokeStyle = '#eee'; g.lineWidth = tr.w + 18; g.stroke(); g.setLineDash([26, 26]); g.strokeStyle = '#d42020'; g.stroke(); g.setLineDash([]);
     g.strokeStyle = th.road; g.lineWidth = tr.w; g.stroke(); g.setLineDash([40, 55]); g.strokeStyle = 'rgba(255,255,255,.28)'; g.lineWidth = 4; g.stroke(); g.setLineDash([]);
   }
+  drawBgOverlay(g, px);
   g.strokeStyle = 'rgba(255,0,0,.9)'; g.lineWidth = 3 * px; g.strokeRect(0, 0, WORLD_W, WORLD_H);
   // direction arrows
   const step = Math.max(20, Math.floor(tr.n / 16)); g.fillStyle = 'rgba(255,255,255,.55)';
@@ -94,12 +95,13 @@ function draw() {
   if (BLD.tool === 'select' || BLD.tool === 'draw') { g.strokeStyle = 'rgba(255,42,42,.55)'; g.lineWidth = 1.5 * px; g.setLineDash([6 * px, 6 * px]); g.beginPath(); d.pts.forEach((p, i) => i ? g.lineTo(p[0] * WORLD_W, p[1] * WORLD_H) : g.moveTo(p[0] * WORLD_W, p[1] * WORLD_H)); g.closePath(); g.stroke(); g.setLineDash([]);
     d.pts.forEach((p, i) => { const hot = BLD.hover && BLD.hover.pt === i; g.save(); g.translate(p[0] * WORLD_W, p[1] * WORLD_H); g.scale(px, px); g.fillStyle = hot ? '#ff2a2a' : '#fff'; g.strokeStyle = hot ? '#fff' : '#ff2a2a'; g.lineWidth = 2.5; g.beginPath(); g.arc(0, 0, hot ? 9 : 7, 0, 7); g.fill(); g.stroke(); g.restore(); }); }
   if (BLD.stroke) { g.strokeStyle = '#ff2a2a'; g.lineWidth = 6 * px; g.lineJoin = 'round'; g.beginPath(); BLD.stroke.forEach((p, i) => i ? g.lineTo(p[0], p[1]) : g.moveTo(p[0], p[1])); g.stroke(); }
+  drawAlignMarks(g, px);
   g.setTransform(1, 0, 0, 1, 0, 0);
 }
 
 // ---------- UI ----------
 const TOOLS = { select: ['Select (V)', 'Drag the white points to reshape. Double-click the road to add a point, right-click a point to delete it. Drag empty space to pan, scroll to zoom.'], draw: ['Draw (D)', 'Click and drag one continuous loop. Let go and the track is built from your drawing. You drive in the direction you drew.'], start: ['Start (S)', 'Click anywhere on the road to move the start / finish line and grid there.'], cp: ['Checkpoints (C)', 'Click the road to add a gate. Drag a yellow gate along the road to move it, right-click to delete. Gates must be passed in order to count a lap.'] };
-function setTool(t) { BLD.tool = t; document.querySelectorAll('[data-tool]').forEach(b => b.classList.toggle('on', b.dataset.tool === t)); $('bHint').textContent = TOOLS[t][1]; cv().style.cursor = t === 'draw' ? 'crosshair' : t === 'select' ? 'default' : 'copy'; draw(); }
+function setTool(t) { BLD.tool = t; document.querySelectorAll('[data-tool]').forEach(b => b.classList.toggle('on', b.dataset.tool === t)); $('bHint').textContent = TOOLS[t][1]; cv().style.cursor = t === 'img' ? 'move' : t === 'draw' ? 'crosshair' : t === 'select' ? 'default' : 'copy'; draw(); }
 function listUI() {
   $('bList').innerHTML = BLD.list.map((t, i) => `<div class="ti${i === BLD.cur ? ' on' : ''}" data-i="${i}"><span class="tn">${i + 1}. ${esc(t.name)}</span>${i >= BLD.pub.length ? '<i class="bd new">NEW</i>' : edited(i) ? '<i class="bd ed">EDITED</i>' : ''}${t.hidden ? '<i class="bd hd">HIDDEN</i>' : ''}</div>`).join('');
   const dirty = BLD.list.some((t, i) => edited(i)) || BLD.list.length !== BLD.pub.length; $('bPub').classList.toggle('pulse', dirty); $('bDirty').textContent = dirty ? 'Unpublished changes (saved as drafts in this browser)' : 'Everything is published';
@@ -110,12 +112,13 @@ function panelUI() {
   $('pCps').textContent = (BLD.tr ? BLD.tr.gates.length : 0) + (d.cps ? ' gates (custom)' : ' gates (automatic)'); $('pDir').textContent = d.rev ? 'Reversed' : 'As drawn';
   $('pHide').checked = !!d.hidden; $('pHideRow').classList.toggle('hidden', i >= BLD.pub.length); $('pDel').classList.toggle('hidden', i < BLD.pub.length);
   $('pLbWarn').classList.toggle('hidden', !layoutChanged(i)); $('pIdx').textContent = 'Track #' + (i + 1) + ' · leaderboard id ' + i;
+  imgPanelUI();
 }
 function issuesUI() { const c = { overlap: 0, edge: 0, sharp: 0 }; BLD.issues.forEach(x => c[x.t]++); const m = []; if (c.overlap) m.push('<span class="err">● Road overlaps itself (red rings)</span>'); if (c.edge) m.push('<span style="color:#ff9a2a">● Too close to the map edge (orange)</span>'); if (c.sharp) m.push('<span style="color:#ffd400">● Very tight corners (yellow), may be undriveable</span>'); if (BLD.tr && BLD.tr.gates.length < 2) m.push('<span class="err">● Add at least 2 checkpoints</span>'); $('pIssues').innerHTML = m.length ? m.join('<br>') : '<span class="ok">✓ No layout problems found</span>'; }
 function newTrack(fromDef) { const n = BLD.list.length + 1, d = fromDef ? Object.assign(clone(fromDef), { name: fromDef.name + ' copy', hidden: false }) : { name: 'New track ' + n, width: 170, pts: Array.from({ length: 12 }, (_, k) => { const a = k / 12 * Math.PI * 2; return [R4(0.5 + Math.cos(a) * 0.34), R4(0.5 + Math.sin(a) * 0.3)]; }), th: clone(THEMES.Sunset) }; delete d.seed; BLD.list.push(d); saveDraft(); select(BLD.list.length - 1); toast('Added track #' + BLD.list.length + '. Use Draw (D) to sketch a layout.', 'ok'); }
 function testDrive() {
-  const d = withSeed(clone(cur()), BLD.cur); delete d.hidden; localStorage.setItem('md_test_track', JSON.stringify(d));
-  window.open(gameUrl() + '?test=1#track=' + encodeURIComponent(b64(JSON.stringify(d))), '_blank');
+  const d = withSeed(clone(cur()), BLD.cur), big = !!(d.bg && /^data:/.test(d.bg.src || '')); delete d.hidden; try { localStorage.setItem('md_test_track', JSON.stringify(d)); } catch (e) { if (big) return toast('Screenshot too big to test-drive before publishing. Publish first, then test.', 'err'); }
+  window.open(gameUrl() + '?test=1' + (big ? '' : '#track=' + encodeURIComponent(b64(JSON.stringify(d)))), '_blank');
   toast('Opening a test drive in the live game. Test laps never go on the leaderboards.', 'ok');
 }
 async function publish() {
@@ -123,7 +126,7 @@ async function publish() {
   if (!ch.length) return toast('Nothing to publish: no changes since the last publish.', 'ok');
   if (!confirm('Publish to ' + DCFG.gameRepo + '/tracks.json?\n\n' + ch.join('\n') + '\n\nThe live game picks it up within a minute or two.')) return;
   $('bPub').disabled = true; $('bPub').textContent = 'PUBLISHING…';
-  try { const c = await publishTracks(BLD.list, 'Tracks: ' + ch.join(', ').slice(0, 180)); const lc = BLD.list.map((t, i) => layoutChanged(i) ? i : -1).filter(i => i >= 0); BLD.pub = clone(BLD.list); saveDraft(); panelUI(); toast('Published (' + (c && c.sha ? c.sha.slice(0, 7) : 'ok') + '). Hard-refresh the game in a minute to see it.', 'ok'); if (lc.length) toast('Layouts changed on: ' + lc.map(i => BLD.list[i].name).join(', ') + '. Old lap times there may no longer be fair; you can clear them in Leaderboards.', ''); }
+  try { BLD.list = await uploadTrackImages(BLD.list); const c = await publishTracks(BLD.list, 'Tracks: ' + ch.join(', ').slice(0, 180)); const lc = BLD.list.map((t, i) => layoutChanged(i) ? i : -1).filter(i => i >= 0); BLD.pub = clone(BLD.list); saveDraft(); panelUI(); toast('Published (' + (c && c.sha ? c.sha.slice(0, 7) : 'ok') + '). Hard-refresh the game in a minute to see it.', 'ok'); if (lc.length) toast('Layouts changed on: ' + lc.map(i => BLD.list[i].name).join(', ') + '. Old lap times there may no longer be fair; you can clear them in Leaderboards.', ''); }
   catch (e) { toast('Publish failed: ' + e.message, 'err'); }
   finally { $('bPub').disabled = false; $('bPub').textContent = 'PUBLISH TO GAME'; }
 }
@@ -159,19 +162,21 @@ function bindBuilder() {
     if (BLD.tool === 'select') { const h = hitHandle(w); if (h >= 0) { snap(); BLD.drag = { pt: h }; } else BLD.drag = { pan: true, x: e.clientX, y: e.clientY, vx: BLD.v.x, vy: BLD.v.y }; }
     else if (BLD.tool === 'draw') BLD.stroke = [w];
     else if (BLD.tool === 'start') { const i = onRoad(w); if (i < 0) return toast('Click on the road.', 'err'); change(d => d.start = norm(...BLD.tr.pts[i])); }
+    else if (BLD.tool === 'img') imgDown(w);
     else if (BLD.tool === 'cp') { const k = hitGate(w); if (k >= 0) { snap(); explicitCps(); BLD.drag = { gate: k }; } else { const i = onRoad(w); if (i < 0) return; if (i < BLD.tr.n * 0.03 || i > BLD.tr.n * 0.97) return toast('Too close to the start line.', 'err'); snap(); explicitCps(); change(d => d.cps.push(norm(...BLD.tr.pts[i])), true); } } };
   c.onpointermove = e => { const w = toWorld(e), D = BLD.drag;
     if (D && D.pan) { BLD.v.x = D.vx + e.clientX - D.x; BLD.v.y = D.vy + e.clientY - D.y; return draw(); }
+    if (D && D.img) { imgMove(w); return; }
     if (D && D.pt !== undefined) { cur().pts[D.pt] = norm(w[0], w[1]); return rebuild(); }
     if (D && D.gate !== undefined) { const i = nearestFull(BLD.tr, w[0], w[1]).i; cur().cps[D.gate] = norm(...BLD.tr.pts[i]); return rebuild(); }
     if (BLD.stroke) { const l = BLD.stroke[BLD.stroke.length - 1]; if (Math.hypot(w[0] - l[0], w[1] - l[1]) > 6 / BLD.v.s) { BLD.stroke.push(w); draw(); } return; }
     const hv = BLD.tool === 'select' ? { pt: hitHandle(w) } : BLD.tool === 'cp' ? { gate: hitGate(w) } : null; const k = JSON.stringify(hv); if (k !== BLD._hk) { BLD._hk = k; BLD.hover = hv; draw(); } };
   c.onpointerup = () => { const D = BLD.drag; BLD.drag = null; if (BLD.stroke) { const S = BLD.stroke; BLD.stroke = null; draw(); finishStroke(S); } else if (D && !D.pan) { saveDraft(); panelUI(); } };
-  c.onwheel = e => { e.preventDefault(); const r = c.getBoundingClientRect(), mx = e.clientX - r.left, my = e.clientY - r.top, f = Math.exp(-e.deltaY * 0.0015), s = Math.max(0.05, Math.min(2, BLD.v.s * f)); BLD.v.x = mx - (mx - BLD.v.x) * s / BLD.v.s; BLD.v.y = my - (my - BLD.v.y) * s / BLD.v.s; BLD.v.s = s; draw(); };
+  c.onwheel = e => { e.preventDefault(); if (BLD.tool === 'img' && imgWheel(e)) return; const r = c.getBoundingClientRect(), mx = e.clientX - r.left, my = e.clientY - r.top, f = Math.exp(-e.deltaY * 0.0015), s = Math.max(0.05, Math.min(2, BLD.v.s * f)); BLD.v.x = mx - (mx - BLD.v.x) * s / BLD.v.s; BLD.v.y = my - (my - BLD.v.y) * s / BLD.v.s; BLD.v.s = s; draw(); };
   addEventListener('resize', BLD_resize);
   addEventListener('keydown', e => { if ($('tab-tracks').classList.contains('hidden') || /INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName)) return;
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); undo(e.shiftKey); return; } if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') { e.preventDefault(); undo(true); return; }
-    if (e.code === 'Space') { BLD.space = true; e.preventDefault(); } const m = { v: 'select', d: 'draw', s: 'start', c: 'cp' }[e.key.toLowerCase()]; if (m && !e.ctrlKey && !e.metaKey) setTool(m); if (e.key.toLowerCase() === 'f') fit();
+    if (e.code === 'Space') { BLD.space = true; e.preventDefault(); } const m = { v: 'select', d: 'draw', s: 'start', c: 'cp', i: 'img' }[e.key.toLowerCase()]; if (m && !e.ctrlKey && !e.metaKey) setTool(m); if (e.key.toLowerCase() === 'f') fit();
     if ((e.key === 'Delete' || e.key === 'Backspace') && BLD.hover && BLD.hover.pt >= 0 && cur().pts.length > 4) change(d => d.pts.splice(BLD.hover.pt, 1)); });
   addEventListener('keyup', e => { if (e.code === 'Space') BLD.space = false; });
 }

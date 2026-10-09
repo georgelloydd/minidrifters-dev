@@ -30,10 +30,18 @@ function buildTrack(x, noBake) {
   tr.canvas = noBake ? null : bakeTrack(tr); return tr;
 }
 function pathTrack(g, tr) { g.beginPath(); tr.pts.forEach((p, i) => i ? g.lineTo(p[0], p[1]) : g.moveTo(p[0], p[1])); g.closePath(); }
-function bakeTrack(tr) {
-  const c = document.createElement('canvas'); c.width = WORLD_W; c.height = WORLD_H; const g = c.getContext('2d'), th = tr.th, R = rnd(tr.def.seed || (tr.idx * 977 + 13));
+function bakeTrack(tr, cIn) {
+  const c = cIn || document.createElement('canvas'); if (!cIn) { c.width = WORLD_W; c.height = WORLD_H; } const g = c.getContext('2d'), th = tr.th, R = rnd(tr.def.seed || (tr.idx * 977 + 13));
+  // optional real-circuit scenery from an uploaded map screenshot (bakes again once the image has loaded)
+  const bg = tr.def.bg, img = bg && bg.src ? bgImage(bg.src) : null, scen = !!(img && img.complete && img.naturalWidth);
+  if (img && !scen && !img._failed) img.addEventListener('load', () => { bakeTrack(tr, c); if (typeof onTrackRebaked === 'function') onTrackRebaked(tr); }, { once: true });
+  g.setTransform(1, 0, 0, 1, 0, 0); g.globalAlpha = 1; g.globalCompositeOperation = 'source-over';
   g.fillStyle = th.grass; g.fillRect(0, 0, WORLD_W, WORLD_H);
+  if (scen) { try { drawScenery(g, tr, img, R); } catch (e) { console.warn('[scenery]', e); } }
+  else {
   for (let i = 0; i < 2600; i++) { g.fillStyle = R() < 0.5 ? th.grass2 : 'rgba(0,0,0,.05)'; g.globalAlpha = 0.35; g.beginPath(); g.arc(R() * WORLD_W, R() * WORLD_H, 20 + R() * 90, 0, 7); g.fill(); }
+  
+  }
   g.globalAlpha = 1; g.lineJoin = g.lineCap = 'round';
   // runoff, kerbs, road
   pathTrack(g, tr); g.strokeStyle = th.sand; g.lineWidth = tr.w + 110; g.stroke();
@@ -56,7 +64,7 @@ function bakeTrack(tr) {
   { const gx = p0[0] + nx * (tr.w / 2 + 120), gy = p0[1] + ny * (tr.w / 2 + 120); g.save(); g.translate(gx, gy); g.rotate(a0); g.fillStyle = 'rgba(0,0,0,.3)'; g.fillRect(-190, -30, 400, 80); g.fillStyle = '#8a8f99'; g.fillRect(-200, -40, 400, 80); for (let i = 0; i < 260; i++) { g.fillStyle = ['#e74c3c', '#f1c40f', '#3498db', '#ecf0f1', '#9b59b6', '#2ecc71'][Math.floor(R() * 6)]; g.beginPath(); g.arc(-190 + R() * 380, -30 + R() * 60, 4, 0, 7); g.fill(); } g.fillStyle = th.night ? '#ff2fb0' : '#d8262f'; g.fillRect(-200, -52, 400, 14); g.restore(); }
   // trees / props off-track
   let placed = 0;
-  for (let tries = 0; tries < 6000 && placed < 520; tries++) {
+  for (let tries = 0; tries < 6000 && placed < (scen ? 0 : 520); tries++) {
     const x = R() * WORLD_W, y = R() * WORLD_H; if (nearestFull(tr, x, y).d < tr.w / 2 + 130) continue; placed++;
     const r = 26 + R() * 30;
     if (th.night && R() < 0.35) { g.fillStyle = 'rgba(0,0,0,.35)'; g.fillRect(x - r + 10, y - r + 10, r * 2, r * 2.4); g.fillStyle = ['#1c2233', '#232b40', '#2a2f45'][Math.floor(R() * 3)]; g.fillRect(x - r, y - r, r * 2, r * 2.4); g.fillStyle = ['#00e5ff', '#ff2fb0', '#ffe14d'][Math.floor(R() * 3)]; g.globalAlpha = 0.7; g.fillRect(x - r, y - r, r * 2, 4); g.globalAlpha = 1; continue; }
@@ -73,3 +81,67 @@ function nearestFull(tr, x, y) { let bi = 0, bd = 1e18; for (let i = 0; i < tr.n
 function refine(tr, x, y, hint, win) { let bi = hint, bd = 1e18; for (let k = -win; k <= win; k++) { const i = (hint + k + tr.n) % tr.n, p = tr.pts[i], d = (p[0] - x) ** 2 + (p[1] - y) ** 2; if (d < bd) { bd = d; bi = i; } } return { i: bi, d: Math.sqrt(bd) }; }
 function nearest(tr, x, y, hint) { const r = refine(tr, x, y, hint, 30); return r.d > tr.w * 1.6 ? nearestFull(tr, x, y) : r; }
 function gridSlot(tr, s) { const i = (tr.n - 6 - Math.floor(s / 2) * 7) % tr.n, p = tr.pts[i], a = tr.dirs[i], side = s % 2 ? 1 : -1, off = side * tr.w * 0.22; return { x: p[0] - Math.sin(a) * off, y: p[1] + Math.cos(a) * off, a, i }; }
+
+// ===== Real-circuit scenery: a north-up map screenshot placed under the track (def.bg) =====
+// bg = { src, x, y (centre, 0-1 of world), w (width, 0-1 of world), rot (radians), mode: 'stylised' | 'photo', bmin (building detection 0.3-0.8) }
+const BG_IMGS = {}, SCEN_CACHE = {}; let TRACK_ASSET_BASE = '';
+function bgImage(src) {
+  const u = /^(data:|blob:|https?:)/.test(src) ? src : TRACK_ASSET_BASE + src; let i = BG_IMGS[u];
+  if (!i) { i = new Image(); if (!u.startsWith('data:') && !u.startsWith('blob:')) i.crossOrigin = 'anonymous'; i.onerror = () => { i._failed = true; }; i.src = u; BG_IMGS[u] = i; }
+  return i;
+}
+function bgPlace(g, bg, img, k) {
+  const s = bg.w * WORLD_W / img.naturalWidth; g.save(); g.scale(k, k); g.translate(bg.x * WORLD_W, bg.y * WORLD_H); g.rotate(bg.rot || 0); g.scale(s, s); g.drawImage(img, -img.naturalWidth / 2, -img.naturalHeight / 2); g.restore();
+}
+// 0 ground, 1 trees/grass, 2 water, 3 building, 4 paved (roads, car parks, tarmac)
+function sceneryClasses(bg, img) {
+  const key = [bg.src.length, bg.src.slice(-40), bg.x, bg.y, bg.w, bg.rot, bg.bmin].join('|'); if (SCEN_CACHE[key]) return SCEN_CACHE[key];
+  const K = 3, W = Math.ceil(WORLD_W / K), H = Math.ceil(WORLD_H / K), c = document.createElement('canvas'); c.width = W; c.height = H;
+  const g = c.getContext('2d', { willReadFrequently: true }); bgPlace(g, bg, img, 1 / K);
+  const px = g.getImageData(0, 0, W, H).data, m = new Uint8Array(W * H), bmin = bg.bmin || 0.45;
+  for (let i = 0, j = 0; i < m.length; i++, j += 4) {
+    if (px[j + 3] < 128) continue; const r = px[j], gg = px[j + 1], b = px[j + 2], mx = Math.max(r, gg, b), mn = Math.min(r, gg, b), l = (mx + mn) / 510, d = (mx - mn) / 255, s = d === 0 ? 0 : d / (1 - Math.abs(2 * l - 1) || 1);
+    let h = 0; if (d) { h = mx === r ? ((gg - b) / (mx - mn)) % 6 : mx === gg ? (b - r) / (mx - mn) + 2 : (r - gg) / (mx - mn) + 4; h = (h * 60 + 360) % 360; }
+    if (s > 0.16 && d > 0.06) m[i] = h >= 180 && h <= 250 ? 2 : h >= 60 && h < 180 ? 1 : h >= 35 && h < 60 && l > 0.6 ? 4 : 0;
+    else m[i] = l >= 0.985 ? 4 : l > 0.935 ? 0 : l > bmin ? 3 : 4;
+  }
+  // smooth: majority of the 3x3 neighbourhood removes map labels, outlines and noise
+  const o = new Uint8Array(m.length), cnt = new Uint8Array(5);
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    cnt.fill(0); for (let dy = -1; dy <= 1; dy++) { const yy = Math.min(H - 1, Math.max(0, y + dy)); for (let dx = -1; dx <= 1; dx++) cnt[m[yy * W + Math.min(W - 1, Math.max(0, x + dx))]]++; }
+    let best = m[y * W + x]; for (let k = 0; k < 5; k++) if (cnt[k] > cnt[best]) best = k; o[y * W + x] = cnt[best] >= 4 ? best : m[y * W + x];
+  }
+  return (SCEN_CACHE[key] = { K, W, H, m: o });
+}
+function hexRgb(h) { const n = parseInt(String(h).slice(1), 16) || 0; return [n >> 16 & 255, n >> 8 & 255, n & 255]; }
+function drawScenery(g, tr, img, R) {
+  const bg = tr.def.bg, th = tr.th;
+  if (bg.mode === 'photo') { bgPlace(g, bg, img, 1); g.fillStyle = th.night ? 'rgba(4,6,22,.4)' : 'rgba(0,0,0,.06)'; g.fillRect(0, 0, WORLD_W, WORLD_H); return; }
+  const S = sceneryClasses(bg, img), { K, W, H, m } = S, night = !!th.night;
+  const pal = [hexRgb(th.grass), hexRgb(th.grass2), night ? [22, 48, 78] : th.snow ? [150, 182, 205] : [72, 138, 190], hexRgb(th.road), night ? [44, 47, 58] : th.snow ? [190, 196, 204] : [150, 153, 160]];
+  const veg = hexRgb(th.tree[0]); pal[1] = pal[1].map((v, i) => Math.round(v * 0.55 + veg[i] * 0.45));
+  const base = document.createElement('canvas'), roof = document.createElement('canvas'), sh = document.createElement('canvas'); [base, roof, sh].forEach(x => { x.width = W; x.height = H; });
+  const bd = base.getContext('2d').createImageData(W, H), rd = roof.getContext('2d').createImageData(W, H), sd = sh.getContext('2d').createImageData(W, H);
+  const roofs = night ? [[58, 64, 88], [48, 54, 76], [70, 62, 84]] : th.snow ? [[236, 240, 244], [222, 228, 234], [210, 214, 220]] : [[214, 208, 198], [196, 192, 186], [178, 70, 58], [226, 222, 214], [150, 156, 166]];
+  for (let i = 0, j = 0; i < m.length; i++, j += 4) {
+    const k = m[i], n = ((i * 2654435761) >>> 24) / 255 * 10 - 5; const c = pal[k === 3 ? 4 : k];
+    bd.data[j] = c[0] + n; bd.data[j + 1] = c[1] + n; bd.data[j + 2] = c[2] + n; bd.data[j + 3] = 255;
+    if (k === 3) { const x = i % W, y = (i / W) | 0, q = roofs[((((x >> 4) * 73856093) ^ ((y >> 4) * 19349663)) >>> 0) % roofs.length];
+      rd.data[j] = q[0] + n; rd.data[j + 1] = q[1] + n; rd.data[j + 2] = q[2] + n; rd.data[j + 3] = 255; sd.data[j + 3] = 255; }
+  }
+  base.getContext('2d').putImageData(bd, 0, 0); roof.getContext('2d').putImageData(rd, 0, 0); sh.getContext('2d').putImageData(sd, 0, 0);
+  g.save(); g.imageSmoothingEnabled = true; g.drawImage(base, 0, 0, W * K, H * K);
+  // buildings: soft drop shadow, darker edge, then the roof
+  g.globalAlpha = night ? 0.55 : 0.32; g.drawImage(sh, 14, 18, W * K, H * K); g.drawImage(sh, 7, 9, W * K, H * K);
+  g.globalAlpha = 1; g.filter = 'brightness(0.72)'; g.drawImage(roof, 2, 2, W * K, H * K); g.filter = 'none'; g.drawImage(roof, 0, 0, W * K, H * K);
+  if (night) { g.globalAlpha = 0.6; for (let t = 0; t < 1400; t++) { const x = (R() * W) | 0, y = (R() * H) | 0; if (m[y * W + x] !== 3) continue; g.fillStyle = ['#ffe14d', '#00e5ff', '#ff2fb0'][(R() * 3) | 0]; g.fillRect(x * K, y * K, 5, 5); } g.globalAlpha = 1; }
+  g.restore();
+  // trees on the green areas, kept clear of the road
+  let placed = 0;
+  for (let t = 0; t < 14000 && placed < 900; t++) {
+    const x = R() * WORLD_W, y = R() * WORLD_H, k = m[((y / K) | 0) * W + ((x / K) | 0)]; if (k !== 1 || R() < 0.35) continue; if (nearestFull(tr, x, y).d < tr.w / 2 + 120) continue; placed++;
+    const r = 16 + R() * 22; g.fillStyle = 'rgba(0,0,0,.25)'; g.beginPath(); g.arc(x + 9, y + 11, r, 0, 7); g.fill();
+    const gr = g.createRadialGradient(x - r * 0.35, y - r * 0.35, r * 0.1, x, y, r); gr.addColorStop(0, th.tree[1]); gr.addColorStop(1, th.tree[0]); g.fillStyle = gr; g.beginPath(); g.arc(x, y, r, 0, 7); g.fill();
+    if (th.snow) { g.fillStyle = 'rgba(255,255,255,.8)'; g.beginPath(); g.arc(x - r * 0.25, y - r * 0.25, r * 0.45, 0, 7); g.fill(); }
+  }
+}

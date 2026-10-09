@@ -45,3 +45,9 @@ table{width:100%;border-collapse:collapse;margin-top:12px;background:var(--p);bo
 #verTag.new b{color:#ff6b6b}
 @keyframes verp{50%{box-shadow:0 0 0 3px rgba(255,42,42,.35)}}
 #dpVer .ok{color:#3ddc84}#dpVer .err{color:#ff9a2a}
+
+.geoDlg{position:fixed;inset:0;z-index:200;background:rgba(0,0,0,.7);display:flex;align-items:center;justify-content:center}
+.geoBox{width:420px;max-width:92vw;background:#111114;border:1px solid #2a2a30;border-top:3px solid #ff2a2a;border-radius:8px;padding:20px}
+.geoBox h3{margin:0 0 4px}.geoBox input,.geoBox select{width:100%;box-sizing:border-box;margin:8px 0;background:#0a0a0c;color:#eee;border:1px solid #2a2a30;border-radius:5px;padding:8px}
+.geoBox .row{justify-content:flex-end;gap:8px}
+#pImgOpts label{display:block;margin:8px 0}#pImgOpts select,#pImgOpts input[type=range]{width:100%}
