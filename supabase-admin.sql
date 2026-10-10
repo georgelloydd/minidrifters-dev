@@ -70,7 +70,7 @@ $$;
 create or replace function public.register_key(p_key text, p_name text) returns void
 language plpgsql security definer set search_path = public, extensions as $$
 begin
-  if p_key !~ '^MD-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$' then return; end if;
+  if p_key !~ '^MD-[A-Z0-9][A-Z0-9-]{1,30}[A-Z0-9]$' then return; end if;
   insert into player_keys (pid, key, name) values (substr(encode(digest('pub:' || p_key, 'sha256'), 'hex'), 1, 24), p_key, left(coalesce(p_name, ''), 14))
   on conflict (pid) do update set name = excluded.name, updated_at = now();
 end $$;
@@ -176,7 +176,7 @@ language plpgsql security definer set search_path = public, extensions as $$
 declare old_key text; np text; npriv text; op text;
 begin
   if not md_is_admin(p_secret) then raise exception 'not allowed'; end if;
-  if p_new_key !~ '^MD-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$' then raise exception 'Key must look like MD-XXXX-XXXX-XXXX'; end if;
+  if p_new_key !~ '^MD-[A-Z0-9][A-Z0-9-]{1,30}[A-Z0-9]$' then raise exception 'Key must start with MD- then 3 to 32 letters, numbers or dashes'; end if;
   select k.key into old_key from player_keys k where k.pid = p_pid; if old_key is null then raise exception 'Player not found'; end if;
   np := substr(encode(digest('pub:' || p_new_key, 'sha256'), 'hex'), 1, 24);
   npriv := encode(digest('priv:' || p_new_key, 'sha256'), 'hex'); op := encode(digest('priv:' || old_key, 'sha256'), 'hex');
@@ -253,7 +253,7 @@ end $$;
 create or replace function public.register_key(p_key text, p_name text) returns void
 language plpgsql security definer set search_path = public, extensions as $$
 begin
-  if p_key !~ '^MD-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$' then return; end if;
+  if p_key !~ '^MD-[A-Z0-9][A-Z0-9-]{1,30}[A-Z0-9]$' then return; end if;
   if not public.name_available(p_name, p_key) then raise exception 'That name is already taken' using errcode = '23505'; end if;
   insert into player_keys (pid, key, name) values (substr(encode(digest('pub:' || p_key, 'sha256'), 'hex'), 1, 24), p_key, left(btrim(p_name), 14))
   on conflict (pid) do update set name = excluded.name, updated_at = now();

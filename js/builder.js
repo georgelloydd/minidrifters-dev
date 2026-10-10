@@ -161,6 +161,8 @@ function bindBuilder() {
   $('pWallSnap').onchange = e => { BLD.wallSnap = e.target.checked; };
   document.querySelectorAll('[data-et]').forEach(b => b.onclick = () => { BLD.elevT = b.dataset.et; setTool('elev'); panelUI(); });
   $('pElevClr').onclick = () => { const n = (cur().elev || []).length; if (n && confirm('Remove all ' + n + ' bridges/tunnels?')) change(d => delete d.elev); };
+  if ($('pCity')) $('pCity').onclick = () => { const d0 = cur(); if (!BLD.tr) return; if ((d0.walls || []).length && !confirm('The City preset replaces the barriers on this track with smooth city barriers on both sides. Continue?')) return;
+    const W = cityBarriers(BLD.tr); change(d => { const night = d.th && d.th.night; d.th = clone(THEMES[night ? 'City night' : 'City']); if (W.length) d.walls = W; else delete d.walls; }); toast('City preset added: buildings + ' + W.length + ' smooth barrier' + (W.length === 1 ? '' : 's') + '.', 'ok'); };
   $('pScene').onchange = e => { const v = e.target.value; change(d => { d.th = d.th || {}; if (v) d.th.scene = v; else delete d.th.scene; }); };
   $('pHide').onchange = e => change(d => { if (e.target.checked) d.hidden = true; else delete d.hidden; });
   $('pDel').onclick = () => { if (BLD.cur < BLD.pub.length || !confirm('Delete ' + cur().name + '?')) return; BLD.list.splice(BLD.cur, 1); saveDraft(); select(BLD.cur - 1); };
@@ -338,4 +340,30 @@ function drawSpawn(g) {
   const sp = cur().spawn; if (!sp || !sp.p || !BLD.tr) return; const x = sp.p[0] * WORLD_W, y = sp.p[1] * WORLD_H, r = nearestFull(BLD.tr, x, y), a = BLD.tr.dirs[r.i], k = Math.max(1, 0.6 / BLD.v.s);
   g.save(); g.translate(x, y); g.scale(k, k); g.rotate(a); g.fillStyle = 'rgba(40,220,120,.95)'; g.strokeStyle = '#fff'; g.lineWidth = 3; g.beginPath(); g.moveTo(40, 0); g.lineTo(-30, -22); g.lineTo(-16, 0); g.lineTo(-30, 22); g.closePath(); g.fill(); g.stroke();
   g.rotate(-a); g.fillStyle = '#fff'; g.font = 'bold 15px sans-serif'; g.textAlign = 'center'; g.fillText('TT SPAWN', 0, -36); g.restore();
+}
+
+// ---------- City preset: smooth barriers one track width beyond each road edge ----------
+function cityBarriers(tr) {
+  const off = tr.w * 1.5 + 22, out = [], N = tr.pts.length;
+  for (const sd of [1, -1]) {
+    const P = tr.pts.map((p, i) => { const d = tr.dirs[i]; return [p[0] - Math.sin(d) * off * sd, p[1] + Math.cos(d) * off * sd]; });
+    const ok = P.map(q => nearestFull(tr, q[0], q[1]).d > off * 0.96);
+    let st = ok.findIndex((v, i) => v && !ok[(i - 1 + N) % N]); const all = st < 0; if (all && !ok[0]) continue; if (st < 0) st = 0;
+    const runs = []; let R = [], i = 0;
+    while (i < N) { const k = (st + i) % N; if (ok[k]) { R.push(P[k]); i++; continue; }
+      let j = i; while (j < N && !ok[(st + j) % N]) j++;
+      const a = R[R.length - 1], b = j < N ? P[(st + j) % N] : null; let clear = !!(a && b && Math.hypot(b[0] - a[0], b[1] - a[1]) < off * 3);
+      if (clear) for (let t = 0.2; t < 1; t += 0.2) if (nearestFull(tr, a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t).d < off * 0.8) { clear = false; break; }
+      if (!clear && R.length) { runs.push(R); R = []; } i = j; }
+    if (R.length) runs.push(R);
+    if (all && runs[0]) runs[0].push(runs[0][0].slice());
+    // a closed ring is smoothed with wrap-around so there is no kink where it joins up
+    const cyc = (A, passes) => { for (let n = 0; n < passes; n++) { const M = A.length; A = A.map((p, i) => { const a = A[(i - 1 + M) % M], b = A[(i + 1) % M]; return [(a[0] + 2 * p[0] + b[0]) / 4, (a[1] + 2 * p[1] + b[1]) / 4]; }); } return A; };
+    const keepOut = A => A.map(p => { const r = nearestFull(tr, p[0], p[1]), need = tr.w * 1.5 + 6; if (r.d >= need) return p; const c = tr.pts[r.i], dx = p[0] - c[0], dy = p[1] - c[1], L = Math.hypot(dx, dy) || 1; return [c[0] + dx / L * need, c[1] + dy / L * need]; });
+    for (const Q of runs) { if (Q.length < 6) continue; let W;
+      if (all) { W = wResample(Q, 14); W.pop(); for (let k = 0; k < 3; k++) W = keepOut(cyc(W, 6)); W.push(W[0].slice()); }
+      else { W = wResample(Q, 14); for (let k = 0; k < 3; k++) W = keepOut(wAvg(W, 6)); W = wChaikin(W, 1); }
+      W = simplifyLine(W, 0.8); if (W.length >= 2) out.push(W.map(q => [q[0] / WORLD_W, q[1] / WORLD_H])); }
+  }
+  return out;
 }

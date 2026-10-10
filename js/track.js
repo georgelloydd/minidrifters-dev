@@ -76,7 +76,7 @@ function bakeTrackIn(tr, cIn) {
   // trees / props off-track
   let placed = 0;
   for (let tries = 0; tries < 6000 * AF && placed < (scen || th.scene === 'none' ? 0 : 520 * AF); tries++) {
-    const x = R() * WORLD_W, y = R() * WORLD_H; if (nearestFull(tr, x, y).d < tr.w / 2 + 130) continue; placed++;
+    const x = R() * WORLD_W, y = R() * WORLD_H; if (nearestFull(tr, x, y).d < (th.scene === 'city' ? tr.w * 1.5 + 95 : tr.w / 2 + 130)) continue; placed++;
     const r = 26 + R() * 30;
     if (th.scene === 'city' && R() < 0.88) { const bw = 40 + R() * 70, bh = 40 + R() * 70, ang = R() < 0.6 ? 0 : R() * Math.PI; g.save(); g.translate(x, y); g.rotate(ang); g.fillStyle = 'rgba(0,0,0,.3)'; g.fillRect(-bw / 2 + 12, -bh / 2 + 14, bw, bh);
       const pal = th.night ? ['#1c2233', '#232b40', '#2a2f45', '#30283a'] : ['#8e949e', '#a3a9b2', '#6f757e', '#b8a58f', '#9a8f84', '#c7c9cc']; g.fillStyle = pal[Math.floor(R() * pal.length)]; g.fillRect(-bw / 2, -bh / 2, bw, bh);
