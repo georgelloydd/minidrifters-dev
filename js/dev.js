@@ -149,16 +149,17 @@ function trShow(keep) {
   const p = PL.find(q => q.pid === $('trP').value); if (!keep) TRW = Object.assign({}, (p && p.tweaks) || {}); const dis = p ? '' : 'disabled';
   $('trBox').innerHTML = (p ? '' : '<p class="dim small">Pick a player above, or press Troll next to them on the Players tab.</p>') +
     `<div class="row wrap"><span class="dim small">Presets:</span>${Object.keys(TW_PRESETS).map(k => `<button class="mini" data-trp="${esc(k)}" ${dis}>${esc(k)}</button>`).join('')}</div>` +
-    TW_FIELDS.map(([k, label, lo, hi]) => { const v = TRW[k] ?? 1; return `<div class="row"><span style="width:160px">${label}</span><input type="range" min="${lo}" max="${hi}" step="0.05" value="${v}" data-tw="${k}" style="flex:1" ${dis}><b class="mono" id="twv_${k}" style="width:60px;text-align:right">×${(+v).toFixed(2)}</b></div>`; }).join('') +
+    TW_FIELDS.map(([k, label, lo, hi]) => { const v = TRW[k] ?? 1; return `<div class="row"><span style="width:160px">${label}</span><input type="range" min="${lo}" max="${hi}" step="0.05" value="${v}" data-tw="${k}" style="flex:1" ${dis}><span class="dim">×</span><input type="number" class="twn mono" step="any" min="0" value="${+v}" data-twn="${k}" title="Type any value, it is not limited to the slider" ${dis}></div>`; }).join('') +
     `<label class="chk"><input type="checkbox" id="twInv" ${TRW.inv ? 'checked' : ''} ${dis}> Inverted steering (left is right)</label>`;
-  $('trBox').querySelectorAll('[data-tw]').forEach(r => r.oninput = () => { TRW[r.dataset.tw] = +r.value; $('twv_' + r.dataset.tw).textContent = '×' + (+r.value).toFixed(2); });
+  $('trBox').querySelectorAll('[data-tw]').forEach(r => r.oninput = () => { TRW[r.dataset.tw] = +r.value; $('trBox').querySelector('[data-twn="' + r.dataset.tw + '"]').value = +r.value; });
+  $('trBox').querySelectorAll('[data-twn]').forEach(n => n.oninput = () => { const v = parseFloat(n.value); if (!isFinite(v) || v < 0) return; TRW[n.dataset.twn] = v; const r = $('trBox').querySelector('[data-tw="' + n.dataset.twn + '"]'); r.value = Math.min(+r.max, Math.max(+r.min, v)); });
   $('twInv').onchange = e => { TRW.inv = e.target.checked ? 1 : 0; };
   $('trBox').querySelectorAll('[data-trp]').forEach(b => b.onclick = () => { TRW = Object.assign({}, TW_PRESETS[b.dataset.trp]); trShow(true); });
   $('trSave').disabled = $('trReset').disabled = !p;
 }
 async function trSave() {
   const pid = $('trP').value; if (!pid) return; const d = {};
-  for (const [k] of TW_FIELDS) if (TRW[k] != null && Math.abs(TRW[k] - 1) > 0.001) d[k] = Math.round(TRW[k] * 100) / 100; if (TRW.inv) d.inv = 1;
+  for (const [k] of TW_FIELDS) if (TRW[k] != null && Math.abs(TRW[k] - 1) > 0.001) d[k] = Math.round(TRW[k] * 1000) / 1000; if (TRW.inv) d.inv = 1;
   try { await rpc('admin_set_tweaks', { p_pid: pid, p_data: Object.keys(d).length ? d : null }); toast(Object.keys(d).length ? 'Saved. It applies to their car within about 15 seconds.' : 'Everything is default, so their tweaks were cleared.', 'ok'); await loadPlayers(); } catch (e) { toast(e.message, 'err'); }
 }
 async function trReset() {
@@ -334,3 +335,20 @@ async function deployServer() {
   if (document.body) go(); else document.addEventListener('DOMContentLoaded', go);
   window.cselRefresh = () => document.querySelectorAll('select').forEach(s => s._csUpd && s._csUpd());
 })();
+
+// ---------- hidden troll tab: click DEV in the top left ----------
+$('devEm').onclick = () => { document.body.classList.add('trollon'); $('nvTroll').classList.remove('hidden'); setTab('troll'); };
+// ---------- who is online (same realtime presence channel the game joins) ----------
+let DONL = null;
+function devOnline() {
+  if (DONL || typeof supabase === 'undefined' || !sbBase() || !DCFG.sbKey) return;
+  try { const c = supabase.createClient(sbBase(), DCFG.sbKey.trim(), { auth: { persistSession: false, autoRefreshToken: false } });
+    DONL = c.channel('md-online', { config: { presence: { key: 'dev' + Math.random().toString(36).slice(2, 8) } } }); DONL.on('presence', { event: 'sync' }, devOnlineShow); DONL.subscribe(); } catch (e) { DONL = null; }
+}
+function devOnlineShow() {
+  if (!DONL) return; const st = DONL.presenceState(), L = []; for (const k in st) { const p = st[k][st[k].length - 1]; if (p) L.push(p); }
+  L.sort((a, b) => String(a.name).localeCompare(String(b.name)));
+  $('devOnl').textContent = '● ' + L.length + ' online'; $('onN').textContent = '(' + L.length + ')';
+  $('onList').innerHTML = L.length ? L.map(p => `<div class="onRow"><span class="onDot" style="background:${esc(p.color || '#888')}"></span><b>${esc(p.name || 'Driver')}</b><span>${esc(p.where || '')}${p.track ? ' · ' + esc(p.track) : ''}</span><span class="mono dim">${p.pid ? esc(String(p.pid).slice(0, 10)) : 'no account'}</span></div>`).join('') : 'Nobody is playing right now.';
+}
+setInterval(devOnline, 3000); setTimeout(devOnline, 500);

@@ -28,10 +28,10 @@ function buildTrack(x, noBake) {
   if (def.rev) { const r = pts.splice(1).reverse(); pts.push(...r); }
   const dirs = pts.map((p, i) => { const q = pts[(i + 1) % N], r = pts[(i - 1 + N) % N]; return Math.atan2(q[1] - r[1], q[0] - r[0]); });
   // checkpoint gates: explicit positions projected onto the line, else 7 evenly spaced
-  let gi = Array.isArray(def.cps) && def.cps.length ? def.cps.map(c => nearIdx(pts, c[0] * WORLD_W, c[1] * WORLD_H)) : [1, 2, 3, 4, 5, 6, 7].map(k => Math.floor(k * N / 8));
-  gi = [...new Set(gi.filter(i => i > N * 0.02 && i < N * 0.98))].sort((a, b) => a - b);
-  if (!gi.length) gi = [1, 2, 3, 4, 5, 6, 7].map(k => Math.floor(k * N / 8));
-  const tr = { walls: wallSegs(def), idx, def, W: WORLD_W, H: WORLD_H, name: def.name, w: def.width, pts, dirs, n: N, len: L, th: def.th, gates: gi.map((i, k) => ({ s: k + 1, i })) };
+  let gq = Array.isArray(def.cps) && def.cps.length ? def.cps.map(c => ({ i: nearIdx(pts, c[0] * WORLD_W, c[1] * WORLD_H), a: +c[2] > 0 ? +c[2] : 0, b: +c[3] > 0 ? +c[3] : 0 })) : [];
+  gq = gq.filter(g => g.i > N * 0.02 && g.i < N * 0.98).sort((x, y) => x.i - y.i).filter((g, k, A) => !k || A[k - 1].i !== g.i);
+  if (!gq.length) gq = [1, 2, 3, 4, 5, 6, 7].map(k => ({ i: Math.floor(k * N / 8), a: 0, b: 0 }));
+  const tr = { walls: wallSegs(def), idx, def, W: WORLD_W, H: WORLD_H, name: def.name, w: def.width, pts, dirs, n: N, len: L, th: def.th, gates: gq.map((g, k) => ({ s: k + 1, i: g.i, a: g.a, b: g.b })) };
   tr.elev = elevSecs(tr); tr.rails = railSegs(tr);
   tr.canvas = noBake ? null : bakeTrack(tr); return tr;
 }
@@ -198,9 +198,10 @@ function fixDef(d) {
   const th = d.th && typeof d.th === 'object' ? d.th : {}; d.th = Object.assign({}, DEF_TH, th);
   if (!Array.isArray(d.th.tree) || d.th.tree.length < 2) d.th.tree = DEF_TH.tree.slice();
   if (d.start && !finPt(d.start)) delete d.start;
-  if (d.cps && !Array.isArray(d.cps)) delete d.cps; else if (d.cps) d.cps = d.cps.filter(finPt);
+  if (d.cps && !Array.isArray(d.cps)) delete d.cps; else if (d.cps) d.cps = d.cps.filter(finPt).map(c => isFinite(c[2]) && isFinite(c[3]) && c[2] > 0 && c[3] > 0 ? [c[0], c[1], Math.min(600, +c[2]), Math.min(600, +c[3])] : [c[0], c[1]]);
   if (d.walls && !Array.isArray(d.walls)) delete d.walls; else if (d.walls) d.walls = d.walls.filter(w => Array.isArray(w)).map(w => w.filter(finPt)).filter(w => w.length >= 2);
   if (d.zones && !Array.isArray(d.zones)) delete d.zones; else if (d.zones) { d.zones = d.zones.filter(z => z && Array.isArray(z.p) && z.p.filter(finPt).length > 2); if (!d.zones.length) delete d.zones; }
+  if (d.objs && !Array.isArray(d.objs)) delete d.objs; else if (d.objs) { d.objs = d.objs.filter(o => Array.isArray(o) && typeof o[0] === 'string' && isFinite(o[1]) && isFinite(o[2])).slice(0, 800); if (!d.objs.length) delete d.objs; }
   if (d.elev && !Array.isArray(d.elev)) delete d.elev; else if (d.elev) d.elev = d.elev.filter(e => e && (e.t === 'bridge' || e.t === 'tunnel') && finPt(e.a) && finPt(e.b));
   if (d.spawn && !(typeof d.spawn === 'object' && finPt(d.spawn.p))) delete d.spawn;
   if (d.th.scene && !['city', 'desert', 'none'].includes(d.th.scene)) delete d.th.scene;
@@ -313,7 +314,7 @@ function decRep(s) { if (typeof s !== 'string' || !s.startsWith('R1:')) return n
 
 // ===== AI decor areas: def.zones = [{ p: [[nx,ny]...], q: 'prompt', g: ground|null, it: [[type, nx, ny, size, angleDeg, '#colour'], ...] }] =====
 const ZONE_GROUND = { grass: ['#5f9a46', '#6dab52'], dark: ['#3f6b35', '#4a7a3e'], sand: ['#d9c08a', '#cdb37c'], dirt: ['#8a6a48', '#7a5c3d'], water: ['#2f7fc1', '#4a9ad6'], asphalt: ['#3a3c42', '#44474e'], concrete: ['#9a9ea6', '#a8acb3'], snow: ['#eef3f8', '#dfe7ef'], field: ['#b8b04a', '#a39c3f'], mud: ['#5c4632', '#6a523b'] };
-function zonesW(tr) { if (tr._zw) return tr._zw; const Z = tr.def && Array.isArray(tr.def.zones) ? tr.def.zones : []; return tr._zw = Z.map(z => ({ p: (z.p || []).filter(finPt).map(q => [q[0] * WORLD_W, q[1] * WORLD_H]), g: z.g, it: Array.isArray(z.it) ? z.it : [] })).filter(z => z.p.length > 2); }
+function zonesW(tr) { if (tr._zw) return tr._zw; const Z = tr.def && Array.isArray(tr.def.zones) ? tr.def.zones : []; return tr._zw = Z.map(z => ({ p: (z.p || []).filter(finPt).map(q => [q[0] * WORLD_W, q[1] * WORLD_H]), g: z.g, it: Array.isArray(z.it) ? z.it : [] })).filter(z => z.p.length > 2).concat(tr.def && Array.isArray(tr.def.objs) && tr.def.objs.length ? [{ p: [], g: null, it: tr.def.objs }] : []); }
 function inPoly(P, x, y) { let c = false; for (let i = 0, j = P.length - 1; i < P.length; j = i++) { const a = P[i], b = P[j]; if ((a[1] > y) !== (b[1] > y) && x < (b[0] - a[0]) * (y - a[1]) / (b[1] - a[1]) + a[0]) c = !c; } return c; }
 function inZones(tr, x, y) { for (const z of zonesW(tr)) if (inPoly(z.p, x, y)) return true; return false; }
 function zonePath(g, P) { g.beginPath(); P.forEach((q, i) => i ? g.lineTo(q[0], q[1]) : g.moveTo(q[0], q[1])); g.closePath(); }
@@ -362,3 +363,6 @@ function drawTyreRow(g, cx, cy, fx, fy, col) {
     g.strokeStyle = col; g.lineWidth = 4; g.beginPath(); g.arc(x, y, 5.6, 0, 7); g.stroke(); }
 }
 const WALL_TYPES = ['Red & white', 'Tyre wall', 'Armco (steel rail)', 'Corrugated metal', 'Concrete', 'Fence'];
+
+// distance from the racing line to a gate's tyres on one side (sd -1 / +1); 0 means the default runoff edge
+function gateW(tr, g, sd) { return (sd < 0 ? g.a : g.b) || tr.w / 2 + RUNOFF; }
