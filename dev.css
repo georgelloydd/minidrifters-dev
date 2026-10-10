@@ -76,3 +76,5 @@ input[type=checkbox]:disabled{opacity:.4;cursor:default}
 .csel-list::-webkit-scrollbar{width:8px}.csel-list::-webkit-scrollbar-thumb{background:#333;border-radius:4px}
 .csel{display:block;width:100%;margin-top:4px}
 .chk input[type=checkbox]{margin-right:4px}
+
+.rv{display:flex;gap:12px;align-items:center;padding:10px 0;border-bottom:1px solid rgba(255,255,255,.08);flex-wrap:wrap}.rv canvas{border-radius:6px;flex:none}.rvi{display:flex;flex-direction:column;gap:3px;flex:1;min-width:180px}.rvb{display:flex;gap:6px;flex-wrap:wrap}.rvst{font-weight:800;font-size:11px;text-transform:uppercase;letter-spacing:1px}.rvst.pending{color:#ffb84a}.rvst.approved{color:#7bff4a}.rvst.rejected{color:#ff6a6a}

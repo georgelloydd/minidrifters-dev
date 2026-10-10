@@ -25,7 +25,7 @@
 <div id="app" class="hidden">
   <header>
     <div class="logo sm">MINI <span>DRIFTERS</span> <em id="devEm" style="cursor:pointer">DEV</em> <span id="devOnl" class="onlN"></span></div>
-    <nav><button class="nv" data-tab="tracks">Track builder</button><button class="nv" data-tab="players">Players</button><button class="nv hidden" data-tab="troll" id="nvTroll">Troll</button><button class="nv" data-tab="lb">Leaderboards</button><button class="nv" data-tab="deploy">Deploy game</button></nav>
+    <nav><button class="nv" data-tab="tracks">Track builder</button><button class="nv" data-tab="players">Players</button><button class="nv hidden" data-tab="troll" id="nvTroll">Troll</button><button class="nv" data-tab="lb">Leaderboards</button><button class="nv" data-tab="review" id="nvReview">Review</button><button class="nv" data-tab="deploy">Deploy game</button></nav>
     <div class="hright"><a id="gameLink" target="_blank" class="dim small"></a><span id="ghState" class="dot" title="GitHub token entered"></span><input id="ghTok" type="password" placeholder="Paste GitHub token to publish" autocomplete="off" spellcheck="false"><button id="lockBtn" class="mini">Lock</button></div>
   </header>
 
@@ -82,7 +82,7 @@
     <div class="panel"><h2>Troll</h2><p class="dim small">Change one player's car handling. It reaches their game within about 15 seconds, even mid-race, and only affects them.</p>
       <div class="row"><select id="trP" style="flex:1"></select><button id="trLoad" class="mini">Reload players</button></div>
       <div id="trBox"></div>
-      <div class="row"><button id="trSave" class="red">Save &amp; apply</button><button id="trReset" class="mini">Reset to default</button></div>
+      <div class="row"><button id="trSave" class="red">Save &amp; apply</button><button id="trReset" class="mini">Reset to default</button><button id="trResetAll" class="mini" style="margin-left:auto">Reset all</button></div>
       <h2 style="margin-top:18px;font-size:16px">Currently trolled</h2><div id="trList" class="dim small"></div></div>
   </section>
 
@@ -92,6 +92,9 @@
       <table><thead><tr><th>#</th><th>Driver</th><th>Lap</th><th>Set</th><th></th></tr></thead><tbody id="lbBody"></tbody></table></div>
   </section>
 
+  <section class="tab hidden" id="tab-review">
+    <div class="panel"><h2>Track submissions</h2><p class="dim small">Tracks players made at minidrifters/build. <b>Approve</b> copies the track into your builder so you can tweak it, then press Publish to add it to the game.</p><div class="row"><button class="mini" id="rvLoad">Refresh</button></div><div id="rvList"></div></div>
+  </section>
   <section class="tab hidden" id="tab-deploy">
     <div class="panel"><h2>Deploy the game</h2><p class="dim small">Pushes the game files bundled in this dev site (<b id="dpN"></b> files) to the game repo in one commit, then makes sure GitHub Pages is on. Your published tracks.json is never overwritten. The token in the top bar needs <b>Contents: Read and write</b> and <b>Pages: Read and write</b> on the game repo. It stays in this tab's memory only.</p><p id="dpVer" class="small" style="margin:6px 0 10px">Checking live game version…</p>
       <label>Game repo<input id="dpRepo" spellcheck="false"></label>

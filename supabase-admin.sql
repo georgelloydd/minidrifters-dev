@@ -272,4 +272,47 @@ grant execute on function public.name_available(text, text) to anon;
 grant execute on function public.rename_player(text, text) to anon;
 grant execute on function public.register_key(text, text) to anon;
 
+-- ===== Track submissions (minidrifters/build -> dev dashboard Review tab) =====
+create table if not exists public.track_submissions (id bigserial primary key, pid text not null, author text, name text not null,
+  def jsonb not null, status text not null default 'pending', note text, created_at timestamptz default now());
+alter table public.track_submissions enable row level security;
+
+create or replace function public.submit_track(p_key text, p_name text, p_def jsonb) returns bigint
+language plpgsql security definer set search_path = public as $$
+declare k record; nid bigint;
+begin
+  select pid, name into k from player_keys where key = p_key; if not found then raise exception 'Sign in to submit tracks.'; end if;
+  if (select count(*) from track_submissions where pid = k.pid and status = 'pending') >= 5 then raise exception 'You already have 5 tracks waiting for review.'; end if;
+  if length(trim(coalesce(p_name, ''))) < 1 or length(p_def::text) > 20000 or jsonb_typeof(p_def->'pts') <> 'array'
+     or jsonb_array_length(p_def->'pts') < 4 or jsonb_array_length(p_def->'pts') > 200 then raise exception 'That track is not valid.'; end if;
+  insert into track_submissions (pid, author, name, def) values (k.pid, k.name, left(trim(p_name), 40), p_def) returning id into nid;
+  return nid;
+end $$;
+
+create or replace function public.my_submissions(p_key text) returns table (id bigint, name text, status text, note text, created_at timestamptz)
+language sql security definer set search_path = public as $$
+  select s.id, s.name, s.status, s.note, s.created_at from track_submissions s join player_keys k on k.pid = s.pid
+  where k.key = p_key order by s.created_at desc limit 30;
+$$;
+
+create or replace function public.admin_list_submissions(p_secret text) returns setof public.track_submissions
+language plpgsql security definer set search_path = public as $$
+begin
+  if not md_is_admin(p_secret) then raise exception 'not allowed'; end if;
+  return query select * from track_submissions order by (status = 'pending') desc, created_at desc limit 200;
+end $$;
+
+create or replace function public.admin_set_submission(p_secret text, p_id bigint, p_status text, p_note text) returns void
+language plpgsql security definer set search_path = public as $$
+begin
+  if not md_is_admin(p_secret) then raise exception 'not allowed'; end if;
+  if p_status = 'delete' then delete from track_submissions where id = p_id; return; end if;
+  update track_submissions set status = p_status, note = p_note where id = p_id;
+end $$;
+
+grant execute on function public.submit_track(text, text, jsonb) to anon;
+grant execute on function public.my_submissions(text) to anon;
+grant execute on function public.admin_list_submissions(text) to anon;
+grant execute on function public.admin_set_submission(text, bigint, text, text) to anon;
+
 notify pgrst, 'reload schema';
