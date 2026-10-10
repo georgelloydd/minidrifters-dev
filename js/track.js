@@ -54,8 +54,9 @@ function bakeTrackIn(tr, cIn) {
   
   }
   g.globalAlpha = 1; g.lineJoin = g.lineCap = 'round';
+  try { drawZoneGround(g, tr); } catch (e) { console.warn('[zones]', e); }
   // runoff, kerbs, road
-  pathTrack(g, tr); g.strokeStyle = th.sand; g.lineWidth = tr.w + 110; g.stroke();
+  pathTrack(g, tr); g.strokeStyle = th.sand; g.lineWidth = tr.w + RUNOFF * 2; g.stroke();
   g.strokeStyle = 'rgba(0,0,0,.18)'; g.lineWidth = tr.w + 34; g.stroke();
   g.strokeStyle = '#f2f2f2'; g.lineWidth = tr.w + 26; g.stroke();
   g.setLineDash([34, 34]); g.strokeStyle = th.night ? '#ff2fb0' : '#d8262f'; g.stroke(); g.setLineDash([]);
@@ -91,6 +92,7 @@ function bakeTrackIn(tr, cIn) {
     const gr = g.createRadialGradient(x - r * 0.35, y - r * 0.35, r * 0.1, x, y, r); gr.addColorStop(0, th.tree[1]); gr.addColorStop(1, th.tree[0]); g.fillStyle = gr; g.beginPath(); g.arc(x, y, r, 0, 7); g.fill();
     if (th.snow) { g.fillStyle = 'rgba(255,255,255,.8)'; g.beginPath(); g.arc(x - r * 0.25, y - r * 0.25, r * 0.45, 0, 7); g.fill(); }
   }
+  try { drawZoneItems(g, tr, th); } catch (e) { console.warn('[zones]', e); }
   // tyre stacks on outside of tight corners
   for (let i = 0; i < tr.n; i += 6) { const da = angDiff(tr.dirs[(i + 6) % tr.n], tr.dirs[i]); if (Math.abs(da) < 0.12) continue; const side = da > 0 ? -1 : 1, p = tr.pts[i], d = tr.w / 2 + 70; const x = p[0] + Math.cos(tr.dirs[i] + Math.PI / 2) * d * side, y = p[1] + Math.sin(tr.dirs[i] + Math.PI / 2) * d * side; if (nearestFull(tr, x, y).d < tr.w / 2 + 50) continue; g.fillStyle = '#16161a'; g.beginPath(); g.arc(x, y, 13, 0, 7); g.fill(); g.strokeStyle = (i / 6) % 2 ? '#fff' : (th.night ? '#00e5ff' : '#d8262f'); g.lineWidth = 4; g.beginPath(); g.arc(x, y, 9, 0, 7); g.stroke(); }
   return c;
@@ -158,7 +160,7 @@ function drawScenery(g, tr, img, R) {
   // trees on the green areas, kept clear of the road
   let placed = 0;
   const AF = Math.max(1, Math.min(8, WORLD_W * WORLD_H / 14080000)); for (let t = 0; t < 14000 * AF && placed < 900 * AF; t++) {
-    const x = R() * WORLD_W, y = R() * WORLD_H, k = m[((y / K) | 0) * W + ((x / K) | 0)]; if (k !== 1 || R() < 0.35) continue; if (nearestFull(tr, x, y).d < tr.w / 2 + 120) continue; placed++;
+    const x = R() * WORLD_W, y = R() * WORLD_H, k = m[((y / K) | 0) * W + ((x / K) | 0)]; if (k !== 1 || R() < 0.35) continue; if (nearestFull(tr, x, y).d < tr.w / 2 + 120) continue; if (inZones(tr, x, y)) continue; placed++;
     const r = 16 + R() * 22; g.fillStyle = 'rgba(0,0,0,.25)'; g.beginPath(); g.arc(x + 9, y + 11, r, 0, 7); g.fill();
     const gr = g.createRadialGradient(x - r * 0.35, y - r * 0.35, r * 0.1, x, y, r); gr.addColorStop(0, th.tree[1]); gr.addColorStop(1, th.tree[0]); g.fillStyle = gr; g.beginPath(); g.arc(x, y, r, 0, 7); g.fill();
     if (th.snow) { g.fillStyle = 'rgba(255,255,255,.8)'; g.beginPath(); g.arc(x - r * 0.25, y - r * 0.25, r * 0.45, 0, 7); g.fill(); }
@@ -198,6 +200,7 @@ function fixDef(d) {
   if (d.start && !finPt(d.start)) delete d.start;
   if (d.cps && !Array.isArray(d.cps)) delete d.cps; else if (d.cps) d.cps = d.cps.filter(finPt);
   if (d.walls && !Array.isArray(d.walls)) delete d.walls; else if (d.walls) d.walls = d.walls.filter(w => Array.isArray(w)).map(w => w.filter(finPt)).filter(w => w.length >= 2);
+  if (d.zones && !Array.isArray(d.zones)) delete d.zones; else if (d.zones) { d.zones = d.zones.filter(z => z && Array.isArray(z.p) && z.p.filter(finPt).length > 2); if (!d.zones.length) delete d.zones; }
   if (d.elev && !Array.isArray(d.elev)) delete d.elev; else if (d.elev) d.elev = d.elev.filter(e => e && (e.t === 'bridge' || e.t === 'tunnel') && finPt(e.a) && finPt(e.b));
   if (d.spawn && !(typeof d.spawn === 'object' && finPt(d.spawn.p))) delete d.spawn;
   if (d.th.scene && !['city', 'desert', 'none'].includes(d.th.scene)) delete d.th.scene;
@@ -208,19 +211,36 @@ function fixDef(d) {
 const WALL_R = 17;
 function wallSegs(def) {
   const S = []; if (!def || !Array.isArray(def.walls)) return S;
-  for (const w of def.walls) { if (!Array.isArray(w)) continue; for (let i = 1; i < w.length; i++) { const a = w[i - 1], b = w[i]; if (!finPt(a) || !finPt(b)) continue;
+  for (const w of def.walls) { if (!Array.isArray(w)) continue; const wt = Array.isArray(w[0]) && isFinite(w[0][2]) ? Math.max(0, Math.min(5, w[0][2] | 0)) : 0; for (let i = 1; i < w.length; i++) { const a = w[i - 1], b = w[i]; if (!finPt(a) || !finPt(b)) continue;
     const ax = a[0] * WORLD_W, ay = a[1] * WORLD_H, bx = b[0] * WORLD_W, by = b[1] * WORLD_H; if (Math.hypot(bx - ax, by - ay) < 1) continue;
-    S.push({ ax, ay, bx, by, x0: Math.min(ax, bx), y0: Math.min(ay, by), x1: Math.max(ax, bx), y1: Math.max(ay, by) }); } }
+    S.push({ t: wt, ax, ay, bx, by, x0: Math.min(ax, bx), y0: Math.min(ay, by), x1: Math.max(ax, bx), y1: Math.max(ay, by) }); } }
   return S;
 }
 function drawWalls(g, tr) {
-  const S = tr && tr.walls; if (!S || !S.length) return;
+  const S = tr && tr.walls; if (!S || !S.length) return; const night = tr.th && tr.th.night;
   g.save(); g.lineCap = 'round'; g.lineJoin = 'round';
-  g.beginPath(); for (const s of S) { g.moveTo(s.ax, s.ay); g.lineTo(s.bx, s.by); }
-  g.save(); g.translate(5, 6); g.strokeStyle = 'rgba(0,0,0,.35)'; g.lineWidth = 20; g.stroke(); g.restore();
-  g.strokeStyle = '#141418'; g.lineWidth = 20; g.stroke();
-  g.strokeStyle = '#f4f4f6'; g.lineWidth = 14; g.stroke();
-  g.setLineDash([24, 24]); g.lineCap = 'butt'; g.strokeStyle = tr.th && tr.th.night ? '#ff2fb0' : '#e0202c'; g.lineWidth = 14; g.stroke(); g.setLineDash([]);
+  const by = {}; for (const s of S) (by[s.t || 0] = by[s.t || 0] || []).push(s);
+  const path = A => { g.beginPath(); for (const s of A) { g.moveTo(s.ax, s.ay); g.lineTo(s.bx, s.by); } };
+  const along = (A, step, fn) => { let c = 0; for (const s of A) { const L = Math.hypot(s.bx - s.ax, s.by - s.ay), n = Math.max(1, Math.round(L / step)); for (let k = 0; k < n; k++) { const f = (k + 0.5) / n; fn(s.ax + (s.bx - s.ax) * f, s.ay + (s.by - s.ay) * f, c++); } } };
+  const shadow = (A, w, al) => { path(A); g.save(); g.translate(5, 6); g.strokeStyle = 'rgba(0,0,0,' + (al || 0.35) + ')'; g.lineWidth = w; g.stroke(); g.restore(); };
+  for (const k in by) { const A = by[k], t = +k;
+    if (t === 1) { // tyre wall
+      shadow(A, 24); path(A); g.strokeStyle = '#121216'; g.lineWidth = 22; g.stroke();
+      along(A, 19, (x, y, c) => { g.fillStyle = '#1b1b20'; g.beginPath(); g.arc(x, y, 10.5, 0, 7); g.fill(); g.strokeStyle = c % 2 ? (night ? '#00e5ff' : '#f2f2f2') : (night ? '#ff2fb0' : '#d8262f'); g.lineWidth = 3.5; g.beginPath(); g.arc(x, y, 6.3, 0, 7); g.stroke(); });
+    } else if (t === 2) { // armco
+      shadow(A, 12); path(A); g.strokeStyle = '#4f555d'; g.lineWidth = 12; g.stroke(); g.strokeStyle = '#c9ced6'; g.lineWidth = 8; g.stroke(); g.strokeStyle = '#f4f6f9'; g.lineWidth = 2; g.stroke();
+      along(A, 70, (x, y) => { g.fillStyle = '#353a41'; g.fillRect(x - 3.5, y - 3.5, 7, 7); });
+    } else if (t === 3) { // corrugated metal
+      shadow(A, 16); path(A); g.strokeStyle = '#59606a'; g.lineWidth = 16; g.stroke(); g.lineCap = 'butt'; g.setLineDash([5, 5]); g.strokeStyle = night ? '#8d96a3' : '#b3bac3'; g.lineWidth = 14; g.stroke(); g.setLineDash([]); g.lineCap = 'round';
+    } else if (t === 4) { // concrete
+      shadow(A, 24); path(A); g.strokeStyle = '#74777c'; g.lineWidth = 24; g.stroke(); g.strokeStyle = '#c4c6ca'; g.lineWidth = 19; g.stroke(); g.lineCap = 'butt'; g.setLineDash([3, 57]); g.strokeStyle = '#85888d'; g.lineWidth = 19; g.stroke(); g.setLineDash([]); g.lineCap = 'round';
+    } else if (t === 5) { // fence
+      shadow(A, 6, 0.2); path(A); g.lineCap = 'butt'; g.setLineDash([2, 6]); g.strokeStyle = 'rgba(170,176,186,.85)'; g.lineWidth = 9; g.stroke(); g.setLineDash([]); g.lineCap = 'round'; g.strokeStyle = '#2a2d33'; g.lineWidth = 3; g.stroke();
+      along(A, 60, (x, y) => { g.fillStyle = '#3d4148'; g.beginPath(); g.arc(x, y, 4, 0, 7); g.fill(); });
+    } else { // red & white
+      shadow(A, 20); path(A); g.strokeStyle = '#141418'; g.lineWidth = 20; g.stroke(); g.strokeStyle = '#f4f4f6'; g.lineWidth = 14; g.stroke();
+      g.setLineDash([24, 24]); g.lineCap = 'butt'; g.strokeStyle = night ? '#ff2fb0' : '#e0202c'; g.lineWidth = 14; g.stroke(); g.setLineDash([]); g.lineCap = 'round'; }
+  }
   g.restore();
 }
 function wallCollide(c, tr) { return segCollide(c, tr && tr.walls, null); }
@@ -290,3 +310,55 @@ function drawElevAll(g, tr, roofA) { drawTunnelFloor(g, tr); drawTunnelRoof(g, t
 // ---------- lap replays (ghosts): one sample every 100 ms of [x, y, angle], delta-encoded ----------
 function encRep(L) { if (!L || L.length < 5) return null; let px = 0, py = 0, pa = 0; const o = []; for (const [x, y, a] of L) { o.push(x - px, y - py, a - pa); px = x; py = y; pa = a; } return 'R1:' + o.join(','); }
 function decRep(s) { if (typeof s !== 'string' || !s.startsWith('R1:')) return null; const v = s.slice(3).split(',').map(Number), L = []; let x = 0, y = 0, a = 0; for (let i = 0; i + 2 < v.length; i += 3) { if (!isFinite(v[i]) || !isFinite(v[i + 1]) || !isFinite(v[i + 2])) return null; x += v[i]; y += v[i + 1]; a += v[i + 2]; L.push([x, y, a / 100]); } return L.length > 4 ? L : null; }
+
+// ===== AI decor areas: def.zones = [{ p: [[nx,ny]...], q: 'prompt', g: ground|null, it: [[type, nx, ny, size, angleDeg, '#colour'], ...] }] =====
+const ZONE_GROUND = { grass: ['#5f9a46', '#6dab52'], dark: ['#3f6b35', '#4a7a3e'], sand: ['#d9c08a', '#cdb37c'], dirt: ['#8a6a48', '#7a5c3d'], water: ['#2f7fc1', '#4a9ad6'], asphalt: ['#3a3c42', '#44474e'], concrete: ['#9a9ea6', '#a8acb3'], snow: ['#eef3f8', '#dfe7ef'], field: ['#b8b04a', '#a39c3f'], mud: ['#5c4632', '#6a523b'] };
+function zonesW(tr) { if (tr._zw) return tr._zw; const Z = tr.def && Array.isArray(tr.def.zones) ? tr.def.zones : []; return tr._zw = Z.map(z => ({ p: (z.p || []).filter(finPt).map(q => [q[0] * WORLD_W, q[1] * WORLD_H]), g: z.g, it: Array.isArray(z.it) ? z.it : [] })).filter(z => z.p.length > 2); }
+function inPoly(P, x, y) { let c = false; for (let i = 0, j = P.length - 1; i < P.length; j = i++) { const a = P[i], b = P[j]; if ((a[1] > y) !== (b[1] > y) && x < (b[0] - a[0]) * (y - a[1]) / (b[1] - a[1]) + a[0]) c = !c; } return c; }
+function inZones(tr, x, y) { for (const z of zonesW(tr)) if (inPoly(z.p, x, y)) return true; return false; }
+function zonePath(g, P) { g.beginPath(); P.forEach((q, i) => i ? g.lineTo(q[0], q[1]) : g.moveTo(q[0], q[1])); g.closePath(); }
+function drawZoneGround(g, tr) {
+  for (const z of zonesW(tr)) { const G = ZONE_GROUND[z.g] || (/^#[0-9a-f]{6}$/i.test(z.g || '') ? [z.g, z.g] : null); if (!G) continue;
+    let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9; for (const q of z.p) { x0 = Math.min(x0, q[0]); y0 = Math.min(y0, q[1]); x1 = Math.max(x1, q[0]); y1 = Math.max(y1, q[1]); }
+    g.save(); zonePath(g, z.p); g.fillStyle = G[0]; g.fill(); g.clip(); const R = rnd(z.p.length * 131 + Math.round(x0)), n = Math.min(1200, (x1 - x0) * (y1 - y0) / 9000);
+    g.globalAlpha = 0.35; g.fillStyle = G[1]; for (let i = 0; i < n; i++) { g.beginPath(); g.arc(x0 + R() * (x1 - x0), y0 + R() * (y1 - y0), 12 + R() * 40, 0, 7); g.fill(); } g.globalAlpha = 1;
+    if (z.g === 'water') { zonePath(g, z.p); g.strokeStyle = 'rgba(255,255,255,.4)'; g.lineWidth = 14; g.stroke(); g.strokeStyle = 'rgba(20,60,110,.35)'; g.lineWidth = 40; g.globalCompositeOperation = 'source-atop'; g.stroke(); }
+    g.restore(); }
+}
+function drawZoneItems(g, tr, th) {
+  const Z = zonesW(tr); if (!Z.length) return; th = th || tr.th || {}; const night = !!th.night, tree = Array.isArray(th.tree) && th.tree.length > 1 ? th.tree : ['#2f5e2a', '#4f8a3f'];
+  const pick = (R, A) => A[Math.floor(R() * A.length)];
+  for (const z of Z) for (let k = 0; k < z.it.length; k++) { const it = z.it[k]; if (!Array.isArray(it) || !isFinite(it[1]) || !isFinite(it[2])) continue;
+    const t = it[0], x = it[1] * WORLD_W, y = it[2] * WORLD_H, s = Math.max(4, Math.min(240, +it[3] || 20)), r = s / 2, a = (+it[4] || 0) * Math.PI / 180, col = /^#[0-9a-f]{6}$/i.test(it[5] || '') ? it[5] : '', R = rnd(k * 7919 + Math.round(x) * 31 + Math.round(y));
+    g.save(); g.translate(x, y);
+    const shadow = (w, h) => { g.fillStyle = 'rgba(0,0,0,.25)'; g.beginPath(); g.ellipse(r * 0.35, r * 0.45, w, h, 0, 0, 7); g.fill(); };
+    const circ = (cx, cy, rr, c) => { g.fillStyle = c; g.beginPath(); g.arc(cx, cy, rr, 0, 7); g.fill(); };
+    if (t === 'pine') { shadow(r, r); const L = ['#1f4d2b', '#2d6a3a', '#3f8a4a']; for (let i = 0; i < 3; i++) { const rr = r * (1 - i * 0.3); g.fillStyle = col && i === 2 ? col : L[i]; g.beginPath(); for (let j = 0; j < 16; j++) { const q = j / 16 * Math.PI * 2 + a, d = j % 2 ? rr * 0.62 : rr; j ? g.lineTo(Math.cos(q) * d, Math.sin(q) * d) : g.moveTo(Math.cos(q) * d, Math.sin(q) * d); } g.closePath(); g.fill(); } if (th.snow) circ(-r * 0.15, -r * 0.15, r * 0.35, 'rgba(255,255,255,.8)'); }
+    else if (t === 'palm') { shadow(r * 0.8, r * 0.8); g.rotate(a); for (let j = 0; j < 7; j++) { g.save(); g.rotate(j / 7 * Math.PI * 2); g.fillStyle = j % 2 ? '#3f8f3a' : '#2f7a2f'; g.beginPath(); g.ellipse(r * 0.5, 0, r * 0.55, r * 0.17, 0, 0, 7); g.fill(); g.restore(); } circ(0, 0, r * 0.14, '#7a5a3a'); }
+    else if (t === 'bush') { shadow(r, r * 0.8); const c0 = col || '#4c7f3a'; circ(-r * 0.35, r * 0.1, r * 0.55, c0); circ(r * 0.35, r * 0.15, r * 0.5, c0); circ(0, -r * 0.25, r * 0.55, c0); circ(-r * 0.1, -r * 0.35, r * 0.25, 'rgba(255,255,255,.15)'); }
+    else if (t === 'flowers') { circ(0, 0, r, 'rgba(60,120,40,.35)'); for (let j = 0; j < 9; j++) circ((R() - 0.5) * s, (R() - 0.5) * s, Math.max(2, s * 0.09), col || pick(R, ['#ff5d8f', '#ffd23f', '#ffffff', '#b06cff', '#ff7b2e'])); }
+    else if (t === 'rock') { shadow(r, r * 0.7); g.rotate(a); g.fillStyle = col || pick(R, ['#8d8f94', '#7b7d82', '#a1a3a8', '#9c7b55']); g.beginPath(); g.ellipse(0, 0, r, r * 0.72, 0, 0, 7); g.fill(); circ(-r * 0.3, -r * 0.25, r * 0.32, 'rgba(255,255,255,.14)'); }
+    else if (t === 'cactus') { const cr = r * 0.32; circ(5, 6, cr * 1.6, 'rgba(0,0,0,.22)'); for (const [ox, oy, rad] of [[0, 0, cr], [cr * 1.4, -cr * 0.4, cr * 0.6], [-cr * 1.4, cr * 0.3, cr * 0.6]]) circ(ox, oy, rad, col || '#4f7d3a'); circ(-cr * 0.3, -cr * 0.3, cr * 0.45, '#6a9a4c'); }
+    else if (t === 'building') { g.rotate(a); const w = s, h = s * (0.7 + R() * 0.6); g.fillStyle = 'rgba(0,0,0,.3)'; g.fillRect(-w / 2 + 12, -h / 2 + 14, w, h); g.fillStyle = col || pick(R, night ? ['#1c2233', '#232b40', '#2a2f45'] : ['#8e949e', '#a3a9b2', '#6f757e', '#b8a58f', '#9a8f84', '#c7c9cc']); g.fillRect(-w / 2, -h / 2, w, h); g.strokeStyle = 'rgba(0,0,0,.22)'; g.lineWidth = 3; g.strokeRect(-w / 2 + 5, -h / 2 + 5, w - 10, h - 10); for (let j = 0, nj = 1 + Math.floor(R() * 4); j < nj; j++) { g.fillStyle = night ? pick(R, ['#ffe14d', '#00e5ff']) : '#d6d8db'; g.fillRect((R() - 0.5) * (w - 24) - 5, (R() - 0.5) * (h - 24) - 5, 10, 10); } }
+    else if (t === 'house') { g.rotate(a); const w = s, h = s * 0.7; g.fillStyle = 'rgba(0,0,0,.3)'; g.fillRect(-w / 2 + 8, -h / 2 + 10, w, h); g.fillStyle = col || pick(R, ['#b5523b', '#8f3f2e', '#6b5b4b', '#3f4a5a', '#7a4a3a']); g.fillRect(-w / 2, -h / 2, w, h); g.fillStyle = 'rgba(0,0,0,.2)'; g.fillRect(-w / 2, 0, w, h / 2); g.strokeStyle = 'rgba(255,255,255,.25)'; g.lineWidth = 2; g.beginPath(); g.moveTo(-w / 2, 0); g.lineTo(w / 2, 0); g.stroke(); if (night) { g.fillStyle = '#ffe14d'; g.fillRect(w * 0.15, -h * 0.3, 6, 6); } }
+    else if (t === 'lamp') { if (night) { const gr = g.createRadialGradient(0, 0, 0, 0, 0, 70); gr.addColorStop(0, 'rgba(255,225,120,.45)'); gr.addColorStop(1, 'rgba(255,225,120,0)'); g.fillStyle = gr; g.fillRect(-70, -70, 140, 140); } circ(3, 3, Math.max(4, r), 'rgba(0,0,0,.3)'); circ(0, 0, Math.max(4, r), '#2b2d33'); circ(0, 0, Math.max(2, r * 0.5), night ? '#fff3b0' : '#c9ced6'); }
+    else if (t === 'tyres') { for (const ox of [-r * 0.9, r * 0.9]) { circ(ox, 0, r, '#16161a'); g.strokeStyle = col || (night ? '#00e5ff' : '#d8262f'); g.lineWidth = Math.max(2, r * 0.3); g.beginPath(); g.arc(ox, 0, r * 0.65, 0, 7); g.stroke(); } }
+    else if (t === 'car') { g.rotate(a); const L = s, W = s * 0.48; g.fillStyle = 'rgba(0,0,0,.3)'; g.fillRect(-L / 2 + 4, -W / 2 + 5, L, W); g.fillStyle = col || pick(R, ['#d8262f', '#2f6fd8', '#f2f2f2', '#222', '#f1c40f', '#8e949e', '#2ecc71']); g.fillRect(-L / 2, -W / 2, L, W); g.fillStyle = 'rgba(20,30,45,.85)'; g.fillRect(-L * 0.12, -W * 0.38, L * 0.34, W * 0.76); g.fillStyle = 'rgba(255,255,255,.18)'; g.fillRect(-L / 2, -W / 2, L, W * 0.2); }
+    else if (t === 'tent') { g.rotate(a); const c0 = col || pick(R, ['#e74c3c', '#3498db', '#f1c40f', '#2ecc71', '#9b59b6']); g.fillStyle = 'rgba(0,0,0,.28)'; g.fillRect(-r + 6, -r * 0.7 + 7, s, s * 0.7); g.fillStyle = c0; g.fillRect(-r, -r * 0.7, s, s * 0.7); g.fillStyle = 'rgba(0,0,0,.22)'; g.fillRect(-r, 0, s, r * 0.7); g.strokeStyle = 'rgba(255,255,255,.5)'; g.lineWidth = 2; g.beginPath(); g.moveTo(-r, 0); g.lineTo(r, 0); g.stroke(); }
+    else if (t === 'crowd') { for (let j = 0, nj = Math.max(6, Math.round(s * 0.5)); j < nj; j++) { const q = R() * 7, d = Math.sqrt(R()) * r; circ(Math.cos(q) * d, Math.sin(q) * d, 3.5, col && R() < 0.5 ? col : pick(R, ['#e74c3c', '#f1c40f', '#3498db', '#ecf0f1', '#9b59b6', '#2ecc71'])); } }
+    else if (t === 'hay') { circ(4, 5, r, 'rgba(0,0,0,.25)'); circ(0, 0, r, col || '#d9b44a'); g.strokeStyle = 'rgba(120,80,20,.45)'; g.lineWidth = 2; g.beginPath(); g.arc(0, 0, r * 0.6, 0, 5); g.stroke(); g.beginPath(); g.arc(0, 0, r * 0.3, 1, 6); g.stroke(); }
+    else if (t === 'bench') { g.rotate(a); g.fillStyle = 'rgba(0,0,0,.25)'; g.fillRect(-r + 3, -s * 0.15 + 4, s, s * 0.3); g.fillStyle = col || '#8a5a3a'; g.fillRect(-r, -s * 0.15, s, s * 0.3); }
+    else if (t === 'umbrella') { circ(5, 6, r, 'rgba(0,0,0,.22)'); const c0 = col || pick(R, ['#e74c3c', '#3498db', '#f1c40f', '#2ecc71']); for (let j = 0; j < 8; j++) { g.fillStyle = j % 2 ? '#f6f6f6' : c0; g.beginPath(); g.moveTo(0, 0); g.arc(0, 0, r, a + j * Math.PI / 4, a + (j + 1) * Math.PI / 4); g.closePath(); g.fill(); } }
+    else { shadow(r, r); const gr = g.createRadialGradient(-r * 0.35, -r * 0.35, r * 0.1, 0, 0, r); gr.addColorStop(0, col || tree[1]); gr.addColorStop(1, tree[0]); g.fillStyle = gr; g.beginPath(); g.arc(0, 0, r, 0, 7); g.fill(); if (th.snow) circ(-r * 0.25, -r * 0.25, r * 0.45, 'rgba(255,255,255,.8)'); }
+    g.restore(); }
+}
+
+// run-off: sand band is tr.w + 2*RUNOFF wide; checkpoints and snapped barriers sit on its edge
+const RUNOFF = 55;
+function drawTyreRow(g, cx, cy, fx, fy, col) {
+  for (const o of [-1, 0, 1]) { const x = cx + fx * o * 17, y = cy + fy * o * 17;
+    g.fillStyle = 'rgba(0,0,0,.35)'; g.beginPath(); g.arc(x + 3, y + 4, 9, 0, 7); g.fill();
+    g.fillStyle = '#16161a'; g.beginPath(); g.arc(x, y, 9, 0, 7); g.fill();
+    g.strokeStyle = col; g.lineWidth = 4; g.beginPath(); g.arc(x, y, 5.6, 0, 7); g.stroke(); }
+}
+const WALL_TYPES = ['Red & white', 'Tyre wall', 'Armco (steel rail)', 'Corrugated metal', 'Concrete', 'Fence'];

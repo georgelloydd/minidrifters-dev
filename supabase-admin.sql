@@ -66,6 +66,15 @@ language sql security definer set search_path = public, extensions as $$
     and length(btrim(p_name)) between 2 and 14;
 $$;
 
+-- paint changes: only the owner of an account key can recolour their leaderboard times
+create or replace function public.set_color(p_key text, p_color text) returns void
+language sql security definer set search_path = public, extensions as $$
+  update public.laps set color = left(p_color, 24)
+  where pid = left(encode(extensions.digest('pub:' || p_key, 'sha256'), 'hex'), 24)
+    and p_color ~ '^#[0-9a-fA-F]{6}$';
+$$;
+grant execute on function public.set_color(text, text) to anon;
+
 -- remembers account keys so a forgotten key can be looked up by name on the dev dashboard
 create or replace function public.register_key(p_key text, p_name text) returns void
 language plpgsql security definer set search_path = public, extensions as $$
