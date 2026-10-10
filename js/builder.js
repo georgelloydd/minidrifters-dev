@@ -250,14 +250,49 @@ function worldPanelUI() {
 // ---------- barriers ----------
 function wallN(w) { return [Math.round(Math.max(0, Math.min(1, w[0] / WORLD_W)) * 1e6) / 1e6, Math.round(Math.max(0, Math.min(1, w[1] / WORLD_H)) * 1e6) / 1e6]; }
 function simplifyLine(P, tol) { if (P.length < 3) return P.slice(); let md = 0, mi = 0; const a = P[0], b = P[P.length - 1]; for (let i = 1; i < P.length - 1; i++) { const d = segDist(P[i], a, b); if (d > md) { md = d; mi = i; } } if (md <= tol) return [a, b]; return simplifyLine(P.slice(0, mi + 1), tol).slice(0, -1).concat(simplifyLine(P.slice(mi), tol)); }
+// smooth, even spacing so barriers never kink or jump
+function wResample(P, step) { if (P.length < 2) return P.slice(); const out = [P[0].slice()]; let need = step;
+  for (let i = 1; i < P.length; i++) { let a = P[i - 1]; const b = P[i]; let d = Math.hypot(b[0] - a[0], b[1] - a[1]);
+    while (d >= need) { const t = need / d; a = [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]; out.push(a); d -= need; need = step; } need -= d; }
+  const l = P[P.length - 1], o = out[out.length - 1]; if (Math.hypot(l[0] - o[0], l[1] - o[1]) > step * 0.35) out.push(l.slice()); else out[out.length - 1] = l.slice(); return out; }
+function wAvg(P, passes) { let A = P; for (let n = 0; n < passes; n++) { if (A.length < 3) return A; A = A.map((p, i) => i === 0 || i === A.length - 1 ? p : [(A[i - 1][0] + 2 * p[0] + A[i + 1][0]) / 4, (A[i - 1][1] + 2 * p[1] + A[i + 1][1]) / 4]); } return A; }
+function wChaikin(P, it) { let A = P; for (let n = 0; n < it; n++) { if (A.length < 3) return A; const R = [A[0]]; for (let i = 0; i < A.length - 1; i++) { const p = A[i], q = A[i + 1]; R.push([p[0] * .75 + q[0] * .25, p[1] * .75 + q[1] * .25], [p[0] * .25 + q[0] * .75, p[1] * .25 + q[1] * .75]); } R.push(A[A.length - 1]); A = R; } return A; }
+function smoothFree(S) { return wChaikin(wAvg(wResample(S, 12), 4), 2); }
+function wallDist(p, L) { if (L.length === 1) return Math.hypot(p[0] - L[0][0], p[1] - L[0][1]); let b = 1e18; for (let i = 1; i < L.length; i++) b = Math.min(b, segDist(p, L[i - 1], L[i])); return b; }
+// overlapping / touching barriers are joined into one
+function mergeWalls(P, walls) {
+  const M = 34, removed = []; let cur = P, changed = true;
+  while (changed) { changed = false;
+    for (let k = 0; k < walls.length; k++) { if (removed.includes(k)) continue;
+      const W = walls[k].map(q => [q[0] * WORLD_W, q[1] * WORLD_H]); if (W.length < 2) continue;
+      const on = cur.map(p => wallDist(p, W) < M); if (!on.some(Boolean)) continue;
+      if (W.every(p => wallDist(p, cur) < M)) { removed.push(k); changed = true; continue; } // new one covers the old one
+      if (on.every(Boolean)) { cur = W; removed.push(k); changed = true; continue; }       // old one already covers the new one
+      const runs = []; let st = -1; for (let i = 0; i <= cur.length; i++) { const off = i < cur.length && !on[i]; if (off && st < 0) st = i; if (!off && st >= 0) { runs.push([st, i - 1]); st = -1; } }
+      const e0 = W[0], e1 = W[W.length - 1], parts = []; let ok = true;
+      for (const [x, y] of runs) {
+        if (x > 0 && y < cur.length - 1) { ok = false; break; } // touches in the middle: a crossing, keep separate
+        const bp = cur[x > 0 ? x - 1 : y + 1], d0 = Math.hypot(bp[0] - e0[0], bp[1] - e0[1]), d1 = Math.hypot(bp[0] - e1[0], bp[1] - e1[1]);
+        if (Math.min(d0, d1) > M * 3) { ok = false; break; }
+        let seg = cur.slice(x, y + 1); if (x === 0) seg = seg.reverse(); parts.push({ end: d0 < d1 ? 0 : 1, seg });
+      }
+      if (!ok || !parts.length || (parts.length === 2 && parts[0].end === parts[1].end)) continue;
+      let res = W.slice(); for (const p of parts) res = p.end ? res.concat(p.seg) : p.seg.slice().reverse().concat(res);
+      cur = res; removed.push(k); changed = true;
+    }
+  }
+  return { pts: cur, removed };
+}
 function finishWall(S, last, free) {
   if (last && S.length && Math.hypot(last[0] - S[S.length - 1][0], last[1] - S[S.length - 1][1]) > 1) S.push(last);
   let len = 0; for (let i = 1; i < S.length; i++) len += Math.hypot(S[i][0] - S[i - 1][0], S[i][1] - S[i - 1][1]);
   if (S.length < 2 || len < 40) { draw(); return toast('Drag further to draw a barrier.', 'err'); }
-  let snapped = false; if (!free && BLD.wallSnap !== false) { const sn = snapWall(S); if (sn) { S = sn; snapped = true; } }
-  const pts = simplifyLine(S, snapped ? 2.5 : Math.max(3, 2 / BLD.v.s)).map(wallN);
-  if (pts.length < 2) { draw(); return; }
-  change(d => { if (!Array.isArray(d.walls)) d.walls = []; d.walls.push(pts); });
+  let P = null; if (!free && BLD.wallSnap !== false) P = snapWall(S); if (!P) P = smoothFree(S);
+  const m = mergeWalls(P, (cur() && cur().walls) || []);
+  let pts = m.pts; if (m.removed.length) pts = wChaikin(wAvg(wResample(pts, 12), 2), 1);
+  pts = simplifyLine(pts, 1.2).map(wallN); if (pts.length < 2) { draw(); return; }
+  change(d => { const W = (Array.isArray(d.walls) ? d.walls : []).filter((_, i) => !m.removed.includes(i)); W.push(pts); d.walls = W; });
+  if (m.removed.length) toast('Joined into one barrier.', 'ok');
 }
 function hitWall(w) {
   const W = cur() && cur().walls; if (!Array.isArray(W)) return -1; const r = Math.max(14, 12 / BLD.v.s); let best = -1, bd = r;
@@ -271,14 +306,16 @@ function wallHover(g) {
 
 // ---------- barriers stick to the run-off edge ----------
 function snapWall(S) {
-  const tr = BLD.tr; if (!tr || !S || S.length < 2) return null; const N = tr.n, ro = tr.w / 2 + 63; let side = 0, near = 0;
-  const ix = S.map(p => { const r = nearestFull(tr, p[0], p[1]), q = tr.pts[r.i], a = tr.dirs[r.i]; side += Math.sign((p[0] - q[0]) * -Math.sin(a) + (p[1] - q[1]) * Math.cos(a)); if (r.d < ro + 260) near++; return r.i; });
-  if (near < S.length * 0.6) return null; const sd = side >= 0 ? 1 : -1; let tot = 0;
-  for (let k = 1; k < ix.length; k++) { let d = (ix[k] - ix[k - 1]) % N; if (d > N / 2) d -= N; if (d < -N / 2) d += N; tot += d; }
-  const cnt = Math.min(N, Math.abs(tot)), dir = tot >= 0 ? 1 : -1; if (cnt < 3) return null; const out = [];
-  for (let k = 0; k <= cnt; k += 2) { const i = ((ix[0] + dir * k) % N + N) % N, q = tr.pts[i], a = tr.dirs[i]; out.push([q[0] - Math.sin(a) * ro * sd, q[1] + Math.cos(a) * ro * sd]); }
-  const ok = out.filter(p => nearestFull(tr, p[0], p[1]).d > ro - 25); // drop loops on the inside of tight hairpins
-  return ok.length >= 2 ? ok : null;
+  const tr = BLD.tr; if (!tr || !S || S.length < 2) return null; const N = tr.n, ro = tr.w / 2 + 63; S = wResample(S, 10);
+  // follow the stroke along the road step by step, so it can never jump to another part of the track
+  let prev = nearestFull(tr, S[0][0], S[0][1]).i, side = 0, near = 0, tot = 0; const i0 = prev;
+  for (const p of S) { const r = refine(tr, p[0], p[1], prev, 24), q = tr.pts[r.i], a = tr.dirs[r.i];
+    side += Math.sign((p[0] - q[0]) * -Math.sin(a) + (p[1] - q[1]) * Math.cos(a)); if (Math.abs(r.d - ro) < 140) near++;
+    let d = r.i - prev; if (d > N / 2) d -= N; if (d < -N / 2) d += N; tot += d; prev = r.i; }
+  if (near < S.length * 0.7) return null; const sd = side >= 0 ? 1 : -1, cnt = Math.min(N, Math.abs(tot)), dir = tot >= 0 ? 1 : -1; if (cnt < 3) return null;
+  const out = []; for (let k = 0; k <= cnt; k++) { const i = ((i0 + dir * k) % N + N) % N, q = tr.pts[i], a = tr.dirs[i]; out.push([q[0] - Math.sin(a) * ro * sd, q[1] + Math.cos(a) * ro * sd]); }
+  const ok = out.filter(p => nearestFull(tr, p[0], p[1]).d > ro - 25); // skip the inside of tight hairpins
+  return ok.length >= 2 ? wChaikin(wAvg(ok, 3), 1) : null;
 }
 // ---------- bridges / tunnels ----------
 function finishElev(S) {
