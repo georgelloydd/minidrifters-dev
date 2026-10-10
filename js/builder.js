@@ -102,14 +102,14 @@ function draw() {
   if (BLD.tool === 'select' || BLD.tool === 'draw') { g.strokeStyle = 'rgba(255,42,42,.55)'; g.lineWidth = 1.5 * px; g.setLineDash([6 * px, 6 * px]); g.beginPath(); d.pts.forEach((p, i) => i ? g.lineTo(p[0] * WORLD_W, p[1] * WORLD_H) : g.moveTo(p[0] * WORLD_W, p[1] * WORLD_H)); g.closePath(); g.stroke(); g.setLineDash([]);
     d.pts.forEach((p, i) => { const hot = BLD.hover && BLD.hover.pt === i; g.save(); g.translate(p[0] * WORLD_W, p[1] * WORLD_H); g.scale(px, px); g.fillStyle = hot ? '#ff2a2a' : '#fff'; g.strokeStyle = hot ? '#fff' : '#ff2a2a'; g.lineWidth = 2.5; g.beginPath(); g.arc(0, 0, hot ? 9 : 7, 0, 7); g.fill(); g.stroke(); g.restore(); }); }
   if (BLD.stroke) { g.strokeStyle = '#ff2a2a'; g.lineWidth = 6 * px; g.lineJoin = 'round'; g.beginPath(); BLD.stroke.forEach((p, i) => i ? g.lineTo(p[0], p[1]) : g.moveTo(p[0], p[1])); g.stroke(); }
-  drawElevAll(g, BLD.tr, 0.5); drawSpawn(g); drawWalls(g, BLD.tr); wallHover(g); elevPreview(g); if (BLD.wstroke && BLD.wstroke.length) { g.save(); g.strokeStyle = '#ffb02e'; g.lineWidth = Math.max(11, 3 / BLD.v.s); g.lineCap = g.lineJoin = 'round'; g.beginPath(); (BLD.wsnap || BLD.wstroke).forEach((p, i) => i ? g.lineTo(p[0], p[1]) : g.moveTo(p[0], p[1])); g.stroke(); g.restore(); }
+  drawElevAll(g, BLD.tr, 0.5); drawSpawn(g); drawStandSel(g); drawWalls(g, BLD.tr); wallHover(g); elevPreview(g); if (BLD.wstroke && BLD.wstroke.length) { g.save(); g.strokeStyle = '#ffb02e'; g.lineWidth = Math.max(11, 3 / BLD.v.s); g.lineCap = g.lineJoin = 'round'; g.beginPath(); (BLD.wsnap || BLD.wstroke).forEach((p, i) => i ? g.lineTo(p[0], p[1]) : g.moveTo(p[0], p[1])); g.stroke(); g.restore(); }
   objOverlay(g, px);
   drawAlignMarks(g, px);
   g.setTransform(1, 0, 0, 1, 0, 0);
 }
 
 // ---------- UI ----------
-const TOOLS = { obj: ['Objects (O)', 'Click to place the object picked on the right. Drag an object to move it, scroll over it to turn it, right-click it to delete it.'], spawn: ['TT spawn (P)', 'Click where time trials should start. The car faces along the track. Right-click to remove it (time trials then start on the grid).'], elev: ['Bridge / tunnel (E)', 'Pick Bridge or Tunnel on the right, then drag along the road from where it starts to where it ends. Bridges go over the rest of the track, tunnels go under it. Right-click one to delete it.'], wall: ['Barriers (B)', 'Drag beside the road and the barrier sticks to the edge of the run-off, following every corner (hold Alt to draw freehand). Drag away from the road for a freehand wall. Right-click a barrier to delete it.'], select: ['Select (V)', 'Drag the white points to reshape. Double-click the road to add a point, right-click a point to delete it. Drag empty space to pan, scroll to zoom.'], draw: ['Draw (D)', 'Click and drag one continuous loop. Let go and the track is built from your drawing. You drive in the direction you drew.'], start: ['Start (S)', 'Click anywhere on the road to move the start / finish line and grid there.'], cp: ['Checkpoints (C)', 'Click the road to add a checkpoint. Drag the middle dot to slide it along the road, drag either tyre row to make it wider or narrower, right-click the dot to delete. Players count it anywhere between the tyres.'] };
+const TOOLS = { stand: ['Grandstand (G)', 'Click or drag to move the grandstand. Scroll to turn it, right-click to remove it.'], obj: ['Objects (O)', 'Click to place the object picked on the right. Drag an object to move it, scroll over it to turn it, right-click it to delete it.'], spawn: ['TT spawn (P)', 'Click where time trials should start. The car faces along the track. Right-click to remove it (time trials then start on the grid).'], elev: ['Bridge / tunnel (E)', 'Pick Bridge or Tunnel on the right, then drag along the road from where it starts to where it ends. Bridges go over the rest of the track, tunnels go under it. Right-click one to delete it.'], wall: ['Barriers (B)', 'Drag beside the road and the barrier sticks to the edge of the run-off, following every corner (hold Alt to draw freehand). Drag away from the road for a freehand wall. Right-click a barrier to delete it.'], select: ['Select (V)', 'Drag the white points to reshape. Double-click the road to add a point, right-click a point to delete it. Drag empty space to pan, scroll to zoom.'], draw: ['Draw (D)', 'Click and drag one continuous loop. Let go and the track is built from your drawing. You drive in the direction you drew.'], start: ['Start (S)', 'Click anywhere on the road to move the start / finish line and grid there.'], cp: ['Checkpoints (C)', 'Click the road to add a checkpoint. Drag the middle dot to slide it along the road, drag either tyre row to make it wider or narrower, right-click the dot to delete. Players count it anywhere between the tyres.'] };
 function setTool(t) { BLD.tool = t; document.querySelectorAll('[data-tool]').forEach(b => b.classList.toggle('on', b.dataset.tool === t)); $('bHint').textContent = TOOLS[t][1]; cv().style.cursor = t === 'img' ? 'move' : t === 'draw' || t === 'wall' || t === 'obj' || t === 'elev' || t === 'spawn' ? 'crosshair' : t === 'select' ? 'default' : 'copy'; draw(); }
 function listUI() {
   $('bList').innerHTML = BLD.list.map((t, i) => `<div class="ti${i === BLD.cur ? ' on' : ''}" data-i="${i}"><span class="tn">${i + 1}. ${esc(t.name)}</span>${i >= BLD.pub.length ? '<i class="bd new">NEW</i>' : edited(i) ? '<i class="bd ed">EDITED</i>' : ''}${t.hidden ? '<i class="bd hd">HIDDEN</i>' : ''}</div>`).join('');
@@ -121,6 +121,7 @@ function panelUI() {
   try { const n = (cur() && cur().walls || []).length; if ($('pWalls')) $('pWalls').textContent = n ? n + ' barrier' + (n > 1 ? 's' : '') + ' on this track.' : 'No barriers yet. Pick the Barriers tool (B) and drag on the map.'; if ($('pWallClr')) $('pWallClr').disabled = !n; } catch (e) { }
   const d = cur(), i = BLD.cur, th = d.th; $('pName').value = d.name; $('pW').value = d.width; $('pWv').textContent = d.width;
   ['grass', 'grass2', 'road', 'sand'].forEach(k => $('c_' + k).value = th[k]); $('c_tree0').value = th.tree[0]; $('c_tree1').value = th.tree[1]; $('pNight').checked = !!th.night; $('pSnow').checked = !!th.snow;
+  try { $('pStandTog').textContent = d.stand === false ? 'Put back' : 'Remove'; } catch (e) { }
   $('pCps').textContent = (BLD.tr ? BLD.tr.gates.length : 0) + (d.cps ? ' gates (custom)' : ' gates (automatic)'); $('pDir').textContent = d.rev ? 'Reversed' : 'As drawn';
   $('pHide').checked = !!d.hidden; $('pHideRow').classList.toggle('hidden', i >= BLD.pub.length); $('pDel').classList.toggle('hidden', i < BLD.pub.length);
   $('pLbWarn').classList.toggle('hidden', !layoutChanged(i)); $('pIdx').textContent = 'Track #' + (i + 1) + ' · leaderboard id ' + i;
@@ -160,6 +161,9 @@ function bindBuilder() {
   $('pFlip').onclick = () => change(d => { if (d.rev) delete d.rev; else d.rev = true; });
   $('pAuto').onclick = () => { const N = Math.max(2, Math.min(24, +$('pAutoN').value || 7)), tr = BLD.tr; change(d => d.cps = Array.from({ length: N }, (_, k) => norm(...tr.pts[Math.floor((k + 1) * tr.n / (N + 1))]))); };
   $('pCpReset').onclick = () => change(d => delete d.cps);
+  $('pStandTool').onclick = () => setTool('stand');
+  $('pStandTog').onclick = () => change(d => { if (d.stand === false) delete d.stand; else d.stand = false; });
+  $('pStandAuto').onclick = () => change(d => delete d.stand);
   if ($('pWallClr')) $('pWallClr').onclick = () => { const n = (cur().walls || []).length; if (!n || !confirm('Delete all ' + n + ' barriers on this track?')) return; change(d => delete d.walls); };
   if ($('pWallTool')) $('pWallTool').onclick = () => setTool('wall');
   $('pWallSnap').onchange = e => { BLD.wallSnap = e.target.checked; };
@@ -181,6 +185,7 @@ function bindBuilder() {
   c.oncontextmenu = e => { e.preventDefault(); const w = toWorld(e);
     if (BLD.tool === 'obj') { const k = hitObj(w); if (k >= 0) { BLD.hover = null; change(d => { d.objs.splice(k, 1); if (!d.objs.length) delete d.objs; }); toast('Object removed.', 'ok'); } return; }
     if (BLD.tool === 'select') { const h = hitHandle(w); if (h >= 0) { if (cur().pts.length <= 4) return toast('A track needs at least 4 points.', 'err'); change(d => d.pts.splice(h, 1)); } }
+    if (BLD.tool === 'stand') { if (cur().stand !== false) { change(d => d.stand = false); toast('Grandstand removed.', 'ok'); } return; }
     if (BLD.tool === 'spawn') { if (cur().spawn) { change(d => delete d.spawn); toast('Spawn removed: time trials start on the grid.', 'ok'); } return; }
     if (BLD.tool === 'elev') { const k = hitElev(w); if (k >= 0) { change(d => { d.elev.splice(k, 1); if (!d.elev.length) delete d.elev; }); toast('Removed.', 'ok'); } return; }
     if (BLD.tool === 'wall') { const k = hitWall(w); if (k >= 0) { BLD.hover = null; change(d => { d.walls.splice(k, 1); if (!d.walls.length) delete d.walls; }); toast('Barrier deleted.', 'ok'); } return; }
@@ -196,12 +201,14 @@ function bindBuilder() {
     else if (BLD.tool === 'elev') { BLD.estroke = [w]; draw(); }
     else if (BLD.tool === 'start') { const i = onRoad(w); if (i < 0) return toast('Click on the road.', 'err'); change(d => d.start = norm(...BLD.tr.pts[i])); }
     else if (BLD.tool === 'spawn') { change(d => d.spawn = { p: norm(w[0], w[1]) }); toast('Time trial spawn set.', 'ok'); }
+    else if (BLD.tool === 'stand') { snap(); const sp = standPos(BLD.tr), on = sp && Math.abs((w[0] - sp.x) * Math.cos(sp.a) + (w[1] - sp.y) * Math.sin(sp.a)) < 210 && Math.abs(-(w[0] - sp.x) * Math.sin(sp.a) + (w[1] - sp.y) * Math.cos(sp.a)) < 60, a = sp ? sp.a : BLD.tr.dirs[nearestFull(BLD.tr, w[0], w[1]).i]; BLD.drag = { stand: true, a, dx: on ? sp.x - w[0] : 0, dy: on ? sp.y - w[1] : 0 }; cur().stand = { p: norm(w[0] + BLD.drag.dx, w[1] + BLD.drag.dy), a: Math.round(a * 1000) / 1000 }; rebuild(); }
     else if (BLD.tool === 'img') imgDown(w);
     else if (BLD.tool === 'cp') { const he = hitGateEnd(w), k = he ? -1 : hitGate(w); if (he) { snap(); explicitCps(); BLD.drag = { gend: he }; } else if (k >= 0) { snap(); explicitCps(); BLD.drag = { gate: k }; } else { const i = onRoad(w); if (i < 0) return; if (i < BLD.tr.n * 0.03 || i > BLD.tr.n * 0.97) return toast('Too close to the start line.', 'err'); snap(); explicitCps(); change(d => d.cps.push(norm(...BLD.tr.pts[i])), true); } } };
   c.onpointermove = e => { const w = toWorld(e), D = BLD.drag;
     if (D && D.pan) { BLD.v.x = D.vx + e.clientX - D.x; BLD.v.y = D.vy + e.clientY - D.y; return draw(); }
     if (D && D.img) { imgMove(w); return; }
     if (D && D.pt !== undefined) { cur().pts[D.pt] = norm(w[0], w[1]); return rebuild(); }
+    if (D && D.stand) { cur().stand = { p: norm(w[0] + D.dx, w[1] + D.dy), a: Math.round(D.a * 1000) / 1000 }; return rebuild(); }
     if (D && D.gate !== undefined) { const i = nearestFull(BLD.tr, w[0], w[1]).i; const o = cur().cps[D.gate] || [], n = norm(...BLD.tr.pts[i]); cur().cps[D.gate] = o.length > 3 ? [n[0], n[1], o[2], o[3]] : n; return rebuild(); }
     if (D && D.gend) { const tr = BLD.tr, gt = tr.gates[D.gend.k], c = cur().cps[D.gend.k]; if (!gt || !c) return; const p = tr.pts[gt.i], a = tr.dirs[gt.i], lat = ((w[0] - p[0]) * -Math.sin(a) + (w[1] - p[1]) * Math.cos(a)) * D.gend.s, v = Math.round(Math.max(20, Math.min(600, lat))), A = D.gend.s < 0 ? v : Math.round(gateW(tr, gt, -1)), Bw = D.gend.s > 0 ? v : Math.round(gateW(tr, gt, 1)); cur().cps[D.gend.k] = [c[0], c[1], A, Bw]; return rebuild(); }
     if (BLD.wstroke) { const l = BLD.wstroke[BLD.wstroke.length - 1]; if (Math.hypot(w[0] - l[0], w[1] - l[1]) > 8 / BLD.v.s) { BLD.wstroke.push(w); BLD.wsnap = BLD.wallSnap !== false && !e.altKey ? snapWall(BLD.wstroke) : null; draw(); } return; }
@@ -212,11 +219,11 @@ function bindBuilder() {
     if (BLD.stroke) { const l = BLD.stroke[BLD.stroke.length - 1]; if (Math.hypot(w[0] - l[0], w[1] - l[1]) > 6 / BLD.v.s) { BLD.stroke.push(w); draw(); } return; }
     const hv = BLD.tool === 'select' ? { pt: hitHandle(w) } : BLD.tool === 'cp' ? (e2 => e2 ? { gate: -1, end: e2 } : { gate: hitGate(w) })(hitGateEnd(w)) : null; const k = JSON.stringify(hv); if (k !== BLD._hk) { BLD._hk = k; BLD.hover = hv; draw(); } };
   c.onpointerup = e => { if (BLD.estroke) { const S = BLD.estroke; BLD.estroke = null; finishElev(S); return; } if (BLD.wstroke) { const S = BLD.wstroke; BLD.wstroke = null; BLD.wsnap = null; finishWall(S, toWorld(e), e.altKey); return; } const D = BLD.drag; BLD.drag = null; if (BLD.stroke) { const S = BLD.stroke; BLD.stroke = null; draw(); finishStroke(S); } else if (D && !D.pan) { saveDraft(); panelUI(); } };
-  c.onwheel = e => { e.preventDefault(); if (objWheel(e)) return; if (BLD.tool === 'img' && imgWheel(e)) return; const r = c.getBoundingClientRect(), mx = e.clientX - r.left, my = e.clientY - r.top, f = Math.exp(-e.deltaY * 0.0015), s = Math.max(0.002, Math.min(4, BLD.v.s * f)); BLD.v.x = mx - (mx - BLD.v.x) * s / BLD.v.s; BLD.v.y = my - (my - BLD.v.y) * s / BLD.v.s; BLD.v.s = s; draw(); };
+  c.onwheel = e => { e.preventDefault(); if (standWheel(e)) return; if (objWheel(e)) return; if (BLD.tool === 'img' && imgWheel(e)) return; const r = c.getBoundingClientRect(), mx = e.clientX - r.left, my = e.clientY - r.top, f = Math.exp(-e.deltaY * 0.0015), s = Math.max(0.002, Math.min(4, BLD.v.s * f)); BLD.v.x = mx - (mx - BLD.v.x) * s / BLD.v.s; BLD.v.y = my - (my - BLD.v.y) * s / BLD.v.s; BLD.v.s = s; draw(); };
   addEventListener('resize', BLD_resize);
   addEventListener('keydown', e => { if ($('tab-tracks').classList.contains('hidden') || /INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName)) return;
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); undo(e.shiftKey); return; } if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') { e.preventDefault(); undo(true); return; }
-    if (e.code === 'Space') { BLD.space = true; e.preventDefault(); } const m = { v: 'select', d: 'draw', s: 'start', c: 'cp', i: 'img', b: 'wall', e: 'elev', p: 'spawn', o: 'obj' }[e.key.toLowerCase()]; if (m && !e.ctrlKey && !e.metaKey) setTool(m); if (e.key.toLowerCase() === 'f') fit();
+    if (e.code === 'Space') { BLD.space = true; e.preventDefault(); } const m = { g: 'stand', v: 'select', d: 'draw', s: 'start', c: 'cp', i: 'img', b: 'wall', e: 'elev', p: 'spawn', o: 'obj' }[e.key.toLowerCase()]; if (m && !e.ctrlKey && !e.metaKey) setTool(m); if (e.key.toLowerCase() === 'f') fit();
     if ((e.key === 'Delete' || e.key === 'Backspace') && BLD.hover && BLD.hover.pt >= 0 && cur().pts.length > 4) change(d => d.pts.splice(BLD.hover.pt, 1)); });
   addEventListener('keyup', e => { if (e.code === 'Space') BLD.space = false; });
 }
@@ -230,7 +237,7 @@ function setWorld(w, h, keep, centre) {
     const [ow, oh] = worldOf(d), c = centre || [ow / 2, oh / 2];
     if (keep) {
       const M = p => [R6((p[0] * ow - c[0] + w / 2) / w), R6((p[1] * oh - c[1] + h / 2) / h)];
-      d.pts = d.pts.map(M); if (d.start) d.start = M(d.start); if (Array.isArray(d.cps)) d.cps = d.cps.map(c => { const m = M(c); return c.length > 3 ? [m[0], m[1], c[3], c[2]] : m; }); if (Array.isArray(d.walls)) d.walls = d.walls.map(w => { const t = w[0] && w[0][2], o = w.map(M); if (t && o[0]) o[0] = [o[0][0], o[0][1], t]; return o; }); if (d.spawn && d.spawn.p) d.spawn.p = M(d.spawn.p); if (Array.isArray(d.elev)) d.elev.forEach(e => ['a', 'm', 'b'].forEach(k => { if (e[k]) e[k] = M(e[k]); }));
+      d.pts = d.pts.map(M); if (d.start) d.start = M(d.start); if (d.stand) delete d.stand; if (Array.isArray(d.cps)) d.cps = d.cps.map(c => { const m = M(c); return c.length > 3 ? [m[0], m[1], c[3], c[2]] : m; }); if (Array.isArray(d.walls)) d.walls = d.walls.map(w => { const t = w[0] && w[0][2], o = w.map(M); if (t && o[0]) o[0] = [o[0][0], o[0][1], t]; return o; }); if (d.spawn && d.spawn.p) d.spawn.p = M(d.spawn.p); if (Array.isArray(d.elev)) d.elev.forEach(e => ['a', 'm', 'b'].forEach(k => { if (e[k]) e[k] = M(e[k]); }));
       if (d.bg) { const q = M([d.bg.x, d.bg.y]); d.bg.x = q[0]; d.bg.y = q[1]; d.bg.w = R6(d.bg.w * ow / w); }
     }
     if (w === WORLD_DEF[0] && h === WORLD_DEF[1]) delete d.world; else d.world = [w, h];
@@ -469,4 +476,15 @@ function objBind() {
   $('pObjCol').oninput = e => { O.c = e.target.value; $('pObjAuto').checked = false; objSave(); draw(); };
   $('pObjTool').onclick = () => setTool('obj');
   $('pObjClr').onclick = () => { if (!(cur().objs || []).length) return toast('No objects on this track yet.', 'err'); if (confirm('Remove all placed objects from this track?')) change(d => delete d.objs); };
+}
+
+let STW = 0;
+function standWheel(e) {
+  if (BLD.tool !== 'stand' || !BLD.tr) return false; const sp = standPos(BLD.tr); if (!sp) return false;
+  if (Date.now() - STW > 600) snap(); STW = Date.now();
+  cur().stand = { p: norm(sp.x, sp.y), a: Math.round((sp.a + Math.sign(e.deltaY) * (e.shiftKey ? 0.02 : 0.1)) * 1000) / 1000 }; rebuild(); saveDraft(); return true;
+}
+function drawStandSel(g) {
+  if (BLD.tool !== 'stand' || !BLD.tr) return; const sp = standPos(BLD.tr); if (!sp) return;
+  g.save(); g.translate(sp.x, sp.y); g.rotate(sp.a); g.setLineDash([16, 10]); g.strokeStyle = '#ffb02e'; g.lineWidth = Math.max(3, 2 / BLD.v.s); g.strokeRect(-210, -60, 420, 112); g.restore();
 }

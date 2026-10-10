@@ -71,9 +71,9 @@ function bakeTrackIn(tr, cIn) {
   const p0 = tr.pts[0], a0 = tr.dirs[0], nx = -Math.sin(a0), ny = Math.cos(a0), sq = tr.w / 10;
   g.save(); g.translate(p0[0], p0[1]); g.rotate(a0); for (let r = 0; r < 2; r++) for (let k = 0; k < 10; k++) { g.fillStyle = (r + k) % 2 ? '#111' : '#fff'; g.fillRect(-sq + r * sq, -tr.w / 2 + k * sq, sq, sq); } g.restore();
   // grid boxes
-  for (let s = 0; s < 8; s++) { const gp = gridSlot(tr, s); g.save(); g.translate(gp.x, gp.y); g.rotate(gp.a); g.strokeStyle = 'rgba(255,255,255,.6)'; g.lineWidth = 3; g.beginPath(); g.moveTo(34, -24); g.lineTo(40, -24); g.lineTo(40, 24); g.lineTo(34, 24); g.stroke(); g.restore(); }
+  for (let s = 0; s < MAX_GRID; s++) { const gp = gridSlot(tr, s); g.save(); g.translate(gp.x, gp.y); g.rotate(gp.a); g.strokeStyle = 'rgba(255,255,255,.6)'; g.lineWidth = 3; g.beginPath(); g.moveTo(34, -24); g.lineTo(40, -24); g.lineTo(40, 24); g.lineTo(34, 24); g.stroke(); g.restore(); }
   // grandstand near start
-  { const gx = p0[0] + nx * (tr.w / 2 + 120), gy = p0[1] + ny * (tr.w / 2 + 120); g.save(); g.translate(gx, gy); g.rotate(a0); g.fillStyle = 'rgba(0,0,0,.3)'; g.fillRect(-190, -30, 400, 80); g.fillStyle = '#8a8f99'; g.fillRect(-200, -40, 400, 80); for (let i = 0; i < 260; i++) { g.fillStyle = ['#e74c3c', '#f1c40f', '#3498db', '#ecf0f1', '#9b59b6', '#2ecc71'][Math.floor(R() * 6)]; g.beginPath(); g.arc(-190 + R() * 380, -30 + R() * 60, 4, 0, 7); g.fill(); } g.fillStyle = th.night ? '#ff2fb0' : '#d8262f'; g.fillRect(-200, -52, 400, 14); g.restore(); }
+  { const sp = standPos(tr); if (sp) { g.save(); g.translate(sp.x, sp.y); g.rotate(sp.a); g.fillStyle = 'rgba(0,0,0,.3)'; g.fillRect(-190, -30, 400, 80); g.fillStyle = '#8a8f99'; g.fillRect(-200, -40, 400, 80); for (let i = 0; i < 260; i++) { g.fillStyle = ['#e74c3c', '#f1c40f', '#3498db', '#ecf0f1', '#9b59b6', '#2ecc71'][Math.floor(R() * 6)]; g.beginPath(); g.arc(-190 + R() * 380, -30 + R() * 60, 4, 0, 7); g.fill(); } g.fillStyle = th.night ? '#ff2fb0' : '#d8262f'; g.fillRect(-200, -52, 400, 14); g.restore(); } }
   // trees / props off-track
   let placed = 0;
   for (let tries = 0; tries < 6000 * AF && placed < (scen || th.scene === 'none' ? 0 : 520 * AF); tries++) {
@@ -181,7 +181,7 @@ function drawRoadLive(g, tr, x0, y0, x1, y1) {
   g.lineCap = 'butt'; g.strokeStyle = 'rgba(255,255,255,.35)'; g.lineWidth = 4; g.stroke(path(i => i % 8 < 3));
   const p0 = P[0], a0 = tr.dirs[0], sq = tr.w / 10;
   if (vis[0]) { g.save(); g.translate(p0[0], p0[1]); g.rotate(a0); for (let r = 0; r < 2; r++) for (let k = 0; k < 10; k++) { g.fillStyle = (r + k) % 2 ? '#111' : '#fff'; g.fillRect(-sq + r * sq, -tr.w / 2 + k * sq, sq, sq); } g.restore();
-    for (let s = 0; s < 8; s++) { const gp = gridSlot(tr, s); g.save(); g.translate(gp.x, gp.y); g.rotate(gp.a); g.strokeStyle = 'rgba(255,255,255,.6)'; g.lineWidth = 3; g.beginPath(); g.moveTo(34, -24); g.lineTo(40, -24); g.lineTo(40, 24); g.lineTo(34, 24); g.stroke(); g.restore(); } }
+    for (let s = 0; s < MAX_GRID; s++) { const gp = gridSlot(tr, s); g.save(); g.translate(gp.x, gp.y); g.rotate(gp.a); g.strokeStyle = 'rgba(255,255,255,.6)'; g.lineWidth = 3; g.beginPath(); g.moveTo(34, -24); g.lineTo(40, -24); g.lineTo(40, 24); g.lineTo(34, 24); g.stroke(); g.restore(); } }
   g.restore();
 }
 
@@ -366,3 +366,12 @@ const WALL_TYPES = ['Red & white', 'Tyre wall', 'Armco (steel rail)', 'Corrugate
 
 // distance from the racing line to a gate's tyres on one side (sd -1 / +1); 0 means the default runoff edge
 function gateW(tr, g, sd) { return (sd < 0 ? g.a : g.b) || tr.w / 2 + RUNOFF; }
+
+// grid size = most drivers a lobby can hold
+const MAX_GRID = 12;
+// grandstand: def.stand = false (removed), { p:[nx,ny], a } (placed in the builder) or missing (automatic, beside the start line)
+function standPos(tr) {
+  const d = tr && tr.def && tr.def.stand; if (d === false) return null;
+  if (d && Array.isArray(d.p) && isFinite(d.p[0]) && isFinite(d.p[1])) return { x: d.p[0] * WORLD_W, y: d.p[1] * WORLD_H, a: +d.a || 0 };
+  const p0 = tr.pts[0], a0 = tr.dirs[0], o = tr.w / 2 + 120; return { x: p0[0] - Math.sin(a0) * o, y: p0[1] + Math.cos(a0) * o, a: a0 };
+}
