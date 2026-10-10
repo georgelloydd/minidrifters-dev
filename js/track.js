@@ -217,9 +217,10 @@ function drawWalls(g, tr) {
   const S = tr && tr.walls; if (!S || !S.length) return;
   g.save(); g.lineCap = 'round'; g.lineJoin = 'round';
   g.beginPath(); for (const s of S) { g.moveTo(s.ax, s.ay); g.lineTo(s.bx, s.by); }
-  g.strokeStyle = 'rgba(0,0,0,.35)'; g.lineWidth = 16; g.stroke();
-  g.strokeStyle = '#c9ced6'; g.lineWidth = 11; g.stroke();
-  g.setLineDash([22, 22]); g.strokeStyle = tr.th && tr.th.night ? '#ff2fb0' : '#d8262f'; g.lineWidth = 5; g.stroke(); g.setLineDash([]);
+  g.save(); g.translate(5, 6); g.strokeStyle = 'rgba(0,0,0,.35)'; g.lineWidth = 20; g.stroke(); g.restore();
+  g.strokeStyle = '#141418'; g.lineWidth = 20; g.stroke();
+  g.strokeStyle = '#f4f4f6'; g.lineWidth = 14; g.stroke();
+  g.setLineDash([24, 24]); g.lineCap = 'butt'; g.strokeStyle = tr.th && tr.th.night ? '#ff2fb0' : '#e0202c'; g.lineWidth = 14; g.stroke(); g.setLineDash([]);
   g.restore();
 }
 function wallCollide(c, tr) { return segCollide(c, tr && tr.walls, null); }
