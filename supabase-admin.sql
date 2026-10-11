@@ -315,4 +315,27 @@ grant execute on function public.my_submissions(text) to anon;
 grant execute on function public.admin_list_submissions(text) to anon;
 grant execute on function public.admin_set_submission(text, bigint, text, text) to anon;
 
+-- every lap also stores the driver's full car spec (car, paint, stripes, secondary, wheels, finish, livery, number, helmet, underglow, smoke)
+alter table public.laps add column if not exists look jsonb;
+create or replace function public.submit_lap(p_track int, p_pid text, p_name text, p_color text, p_body text, p_lap_ms int, p_score int, p_replay text, p_look jsonb)
+returns void language sql security definer set search_path = public as $$
+  insert into laps (track, pid, name, color, body, lap_ms, score, replay, look)
+  values (p_track, left(p_pid, 24), left(p_name, 14), left(p_color, 24), left(p_body, 24), p_lap_ms, p_score, left(p_replay, 200000),
+          case when jsonb_typeof(p_look) = 'object' and pg_column_size(p_look) < 4000 then p_look end)
+  on conflict (track, pid) do update
+    set lap_ms = excluded.lap_ms, score = excluded.score, name = excluded.name, color = excluded.color, body = excluded.body, replay = excluded.replay, look = excluded.look, created_at = now()
+    where excluded.lap_ms < laps.lap_ms;
+$$;
+-- car changes: only the owner of an account key can update the car shown on all their times
+create or replace function public.set_look(p_key text, p_look jsonb) returns void
+language sql security definer set search_path = public, extensions as $$
+  update public.laps set look = p_look,
+    color = case when p_look->>'color' ~ '^#[0-9a-fA-F]{6}$' then p_look->>'color' else color end,
+    body = coalesce(nullif(left(p_look->>'body', 24), ''), body)
+  where pid = left(encode(extensions.digest('pub:' || p_key, 'sha256'), 'hex'), 24)
+    and jsonb_typeof(p_look) = 'object' and pg_column_size(p_look) < 4000;
+$$;
+grant execute on function public.submit_lap(int, text, text, text, text, int, int, text, jsonb) to anon;
+grant execute on function public.set_look(text, jsonb) to anon;
+
 notify pgrst, 'reload schema';
