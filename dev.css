@@ -78,3 +78,12 @@ input[type=checkbox]:disabled{opacity:.4;cursor:default}
 .chk input[type=checkbox]{margin-right:4px}
 
 .rv{display:flex;gap:12px;align-items:center;padding:10px 0;border-bottom:1px solid rgba(255,255,255,.08);flex-wrap:wrap}.rv canvas{border-radius:6px;flex:none}.rvi{display:flex;flex-direction:column;gap:3px;flex:1;min-width:180px}.rvb{display:flex;gap:6px;flex-wrap:wrap}.rvst{font-weight:800;font-size:11px;text-transform:uppercase;letter-spacing:1px}.rvst.pending{color:#ffb84a}.rvst.approved{color:#7bff4a}.rvst.rejected{color:#ff6a6a}
+
+/* inventory editor */
+.invSec{border-top:1px solid var(--line);padding:12px 0 6px}.invH{font-weight:800;font-size:12px;letter-spacing:1px;text-transform:uppercase;margin-bottom:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.invGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:6px}
+.invChk{display:flex;gap:6px;align-items:center;background:#0e0e10;border:1px solid var(--line);border-radius:6px;padding:6px 8px;font-size:12px;cursor:pointer;text-transform:none;letter-spacing:0;font-weight:600}
+.invChk.on{border-color:#ffd60a;background:#1a1708}.invChk.inl{padding:3px 8px}
+.invChips{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px}.chip{display:inline-flex;align-items:center;gap:6px;background:#0e0e10;border:1px solid var(--line);border-radius:20px;padding:3px 6px 3px 4px;font:12px ui-monospace,Consolas,monospace}
+.chip i{width:16px;height:16px;border-radius:50%;border:1px solid rgba(255,255,255,.25)}.chip b{cursor:pointer;color:#8a8a94;padding:0 3px}.chip b:hover{color:var(--red)}
+#mBox input[type=color]{width:36px;height:30px;padding:0;border:1px solid var(--line);border-radius:6px;background:none;cursor:pointer}

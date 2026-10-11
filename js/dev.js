@@ -96,14 +96,15 @@ function renderPlayers() {
   PLV = PL.filter(p => !q || [plLabel(p), p.key, p.pid, p.profile_id].some(v => String(v || '').toLowerCase().includes(q)));
   $('plCount').textContent = PLV.length + ' of ' + PL.length + ' players';
   if (!PLV.length) { $('plBody').innerHTML = `<tr><td colspan="6" class="dim">${PL.length ? 'Nobody matches that filter.' : 'No players yet.'}</td></tr>`; return; }
-  $('plBody').innerHTML = PLV.map((p, i) => { const s = (p.data && p.data.stats) || {}, prof = p.profile_id ? `${s.sessions || 0} sessions · ${s.races || 0} races · ${(+s.dist || 0).toFixed(1)} km` : '<span class="dim">no profile</span>';
-    return `<tr><td><b>${esc(plLabel(p))}</b>${p.tweaks ? ' <span title="Trolled">😈</span>' : ''}</td><td class="mono">${p.key ? `<span class="key" data-i="${i}">MD-••••-••••-••••</span> <button class="mini" data-show="${i}">Show</button> <button class="mini" data-copy="${i}">Copy</button>` : '<span class="dim">no key</span>'}</td><td class="mono dim">${esc((p.pid || '—').slice(0, 10))}</td><td class="small">${prof}</td><td class="dim">${p.updated_at ? new Date(p.updated_at).toLocaleString() : ''}</td><td style="white-space:nowrap"><button class="mini" data-edit="${i}">Edit</button>${p.pid ? ` <button class="mini" data-troll="${i}">Troll</button>` : ''} <button class="mini red" data-delp="${i}">Delete</button></td></tr>`; }).join('');
+  $('plBody').innerHTML = PLV.map((p, i) => { const s = (p.data && p.data.stats) || {}, prof = p.profile_id ? `${s.sessions || 0} sessions · ${s.races || 0} races · ${(+s.dist || 0).toFixed(1)} km · <b style="color:#ffd60a">${Math.round(s.coins || 0).toLocaleString()}</b> coins` : '<span class="dim">no profile</span>';
+    return `<tr><td><b>${esc(plLabel(p))}</b>${p.tweaks ? ' <span title="Trolled">😈</span>' : ''}</td><td class="mono">${p.key ? `<span class="key" data-i="${i}">MD-••••-••••-••••</span> <button class="mini" data-show="${i}">Show</button> <button class="mini" data-copy="${i}">Copy</button>` : '<span class="dim">no key</span>'}</td><td class="mono dim">${esc((p.pid || '—').slice(0, 10))}</td><td class="small">${prof}</td><td class="dim">${p.updated_at ? new Date(p.updated_at).toLocaleString() : ''}</td><td style="white-space:nowrap"><button class="mini" data-inv="${i}">Inventory</button> <button class="mini" data-edit="${i}">Edit</button>${p.pid ? ` <button class="mini" data-troll="${i}">Troll</button>` : ''} <button class="mini red" data-delp="${i}">Delete</button></td></tr>`; }).join('');
 }
 function plClick(e) {
-  const b = e.target.closest('button'); if (!b) return; const p = PLV[+(b.dataset.show ?? b.dataset.copy ?? b.dataset.edit ?? b.dataset.troll ?? b.dataset.delp)]; if (!p) return;
+  const b = e.target.closest('button'); if (!b) return; const p = PLV[+(b.dataset.show ?? b.dataset.copy ?? b.dataset.inv ?? b.dataset.edit ?? b.dataset.troll ?? b.dataset.delp)]; if (!p) return;
   if (b.dataset.show !== undefined) { const s = document.querySelector(`.key[data-i="${b.dataset.show}"]`); const on = b.textContent === 'Show'; s.textContent = on ? p.key : 'MD-••••-••••-••••'; b.textContent = on ? 'Hide' : 'Show'; }
   if (b.dataset.copy !== undefined) navigator.clipboard.writeText(p.key).then(() => toast('Key copied for ' + plLabel(p) + '. Send it to them privately: anyone with it can use their account.', 'ok'));
   if (b.dataset.edit !== undefined) editPlayer(p);
+  if (b.dataset.inv !== undefined) editInventory(p);
   if (b.dataset.troll !== undefined) { setTab('troll'); $('trP').value = p.pid; trShow(); }
   if (b.dataset.delp !== undefined) delPlayer(p);
 }
@@ -133,6 +134,56 @@ function editPlayer(p) {
 async function delPlayer(p) {
   if (prompt(`Delete ${plLabel(p)} completely? This removes their key, profile, troll settings and every leaderboard time.\n\nType DELETE to confirm.`) !== 'DELETE') return;
   try { await rpc('admin_delete_player', { p_pid: p.pid || null, p_profile_id: p.profile_id || null }); toast('Deleted ' + plLabel(p) + '.', 'ok'); loadPlayers(); } catch (e) { toast(e.message, 'err'); }
+}
+
+// ---------- inventory + coins (writes stats.coins / stats.own, plus data.adm so a running game picks it up) ----------
+const INV_CARS = [['drift','Drift SR'],['street','Nissan Silvia'],['kart','Go-Kart'],['minnow','Mini Cooper'],['bug','VW Beetle'],['hachi','Toyota AE86'],['kei','Suzuki Carry'],['camper','VW Camper'],['pickup','Ford F-150'],['msedan','BMW M3'],['pony','Mustang GT'],['muscle','Dodge Charger'],['flat6','Porsche 911'],['rotary','Mazda RX-7'],['rspec','Skyline R34'],['hellkat','Dodge Hellcat'],['f1','Formula 1']];
+const INV_PATS = [['clean','Clean'],['stripe','Stripe'],['racing','Racing'],['checker','Checker'],['carbon','Carbon'],['flame','Flame'],['camo','Camo'],['split','Split'],['fade','Fade'],['lemans','Le Mans'],['arrow','Chevron'],['tiger','Tiger'],['honeycomb','Honeycomb'],['circuit','Circuit'],['wave','Wave'],['shard','Shard'],['retro','Retro'],['pinstripe','Pinstripe'],['drip','Drip']];
+const INV_COLS = [['paint','any','Primary',['#ff3b3b','#f2f2f2','#33363d','#1ec8ff']],['sec','secAll','Secondary',['#ffffff','#111111']],['rim','rimAll','Wheels',['#c9ccd2']],['glow','glowAll','Underglow',[]],['smoke','smokeAll','Tyre smoke',[]]];
+const invHex = v => /^#[0-9a-f]{6}$/i.test(v || '');
+function invOwn(stats) {
+  const o = JSON.parse(JSON.stringify((stats && stats.own && typeof stats.own === 'object') ? stats.own : {}));
+  if (!Array.isArray(o.cars)) o.cars = ['drift']; if (!o.cars.includes('drift')) o.cars.unshift('drift');
+  if (!Array.isArray(o.pat)) o.pat = ['clean', 'racing'];
+  for (const [k, all, , free] of INV_COLS) { if (!Array.isArray(o[k])) o[k] = free.slice(); o[k] = [...new Set(o[k].map(x => String(x).toLowerCase()).filter(invHex))]; o[all] = !!o[all]; }
+  o.bought = o.bought || 0; return o;
+}
+function editInventory(p) {
+  if (!p.profile_id) return toast(plLabel(p) + ' has no saved profile yet, so there is nothing to edit.', 'err');
+  const st = (p.data && p.data.stats) || {}, o = invOwn(st);
+  const chk = (grp, id, name, on, lock) => `<label class="invChk${on ? ' on' : ''}"><input type="checkbox" data-g="${grp}" value="${id}" ${on ? 'checked' : ''} ${lock ? 'disabled' : ''}> ${esc(name)}</label>`;
+  modal(`<h2>Inventory · ${esc(plLabel(p))}</h2>
+  <div class="invSec"><div class="invH">Coins</div><div class="row"><input id="invCoins" type="number" min="0" step="1" value="${Math.max(0, Math.round(st.coins || 0))}" style="width:160px">
+   ${[1000, 10000, 100000].map(n => `<button class="mini" data-add="${n}">+${n.toLocaleString()}</button>`).join('')}<button class="mini" data-add="-1000">−1,000</button><button class="mini red" data-add="zero">Set 0</button></div></div>
+  <div class="invSec"><div class="invH">Cars <span class="dim small">Drift SR is always owned</span> <button class="mini" data-all="car">All</button> <button class="mini" data-none="car">None</button></div><div class="invGrid">${INV_CARS.map(([id, n]) => chk('car', id, n, o.cars.includes(id), id === 'drift')).join('')}</div></div>
+  <div class="invSec"><div class="invH">Secondary patterns <button class="mini" data-all="pat">All</button> <button class="mini" data-none="pat">None</button></div><div class="invGrid">${INV_PATS.map(([id, n]) => chk('pat', id, n, o.pat.includes(id), id === 'clean')).join('')}</div></div>
+  ${INV_COLS.map(([k, all, name]) => `<div class="invSec" data-col="${k}"><div class="invH">${name} colours <label class="invChk inl${o[all] ? ' on' : ''}"><input type="checkbox" data-allc="${all}" ${o[all] ? 'checked' : ''}> Every colour (buy all)</label></div>
+   <div class="invChips">${o[k].map(h => `<span class="chip" data-h="${h}"><i style="background:${h}"></i>${h.toUpperCase()}<b title="Remove">×</b></span>`).join('') || '<span class="dim small none">None owned</span>'}</div>
+   <div class="row"><input type="color" value="#ff2a2a" data-pick="${k}"><input class="mono" maxlength="7" placeholder="#RRGGBB" data-hex="${k}" style="width:110px"><button class="mini" data-addc="${k}">Add colour</button></div></div>`).join('')}
+  <div class="row"><button class="red" id="invSave">Save inventory</button><button class="mini" id="invCancel">Cancel</button><span id="invMsg" class="small"></span></div>
+  <p class="dim small">Players get the change next time they open the game, or within a minute if they're sitting in the menu.</p>`);
+  const box = $('mBox');
+  box.addEventListener('change', e => { const l = e.target.closest('.invChk'); if (l) l.classList.toggle('on', e.target.checked); if (e.target.dataset.pick) box.querySelector(`[data-hex="${e.target.dataset.pick}"]`).value = e.target.value.toUpperCase(); });
+  box.addEventListener('click', e => {
+    const b = e.target.closest('button,b'); if (!b) return; const ci = $('invCoins');
+    if (b.dataset.add) ci.value = b.dataset.add === 'zero' ? 0 : Math.max(0, (+ci.value || 0) + +b.dataset.add);
+    if (b.dataset.all || b.dataset.none) box.querySelectorAll(`input[data-g="${b.dataset.all || b.dataset.none}"]:not(:disabled)`).forEach(x => { x.checked = !!b.dataset.all; x.closest('.invChk').classList.toggle('on', x.checked); });
+    if (b.tagName === 'B' && b.closest('.chip')) b.closest('.chip').remove();
+    if (b.dataset.addc) { const k = b.dataset.addc, inp = box.querySelector(`[data-hex="${k}"]`); let h = inp.value.trim(); if (!h.startsWith('#')) h = '#' + h; h = h.toLowerCase();
+      if (!invHex(h)) return toast('Enter a hex code like #FF2A2A', 'err'); const wrap = box.querySelector(`[data-col="${k}"] .invChips`); if (wrap.querySelector(`[data-h="${h}"]`)) return;
+      const n = wrap.querySelector('.none'); if (n) n.remove(); wrap.insertAdjacentHTML('beforeend', `<span class="chip" data-h="${h}"><i style="background:${h}"></i>${h.toUpperCase()}<b title="Remove">×</b></span>`); inp.value = ''; }
+  });
+  $('invCancel').onclick = closeModal;
+  $('invSave').onclick = async () => { const m = $('invMsg'); m.textContent = 'Saving…'; m.className = 'small dim';
+    try {
+      const coins = Math.max(0, Math.round(+$('invCoins').value || 0)), own = Object.assign({}, o);
+      own.cars = ['drift', ...[...box.querySelectorAll('input[data-g="car"]:checked')].map(x => x.value).filter(x => x !== 'drift')];
+      own.pat = [...new Set(['clean', ...[...box.querySelectorAll('input[data-g="pat"]:checked')].map(x => x.value)])];
+      for (const [k, all] of INV_COLS) { own[k] = [...box.querySelectorAll(`[data-col="${k}"] .chip`)].map(c => c.dataset.h); own[all] = box.querySelector(`[data-allc="${all}"]`).checked; }
+      const data = JSON.parse(JSON.stringify(p.data || {})); data.stats = data.stats || {}; data.stats.coins = coins; data.stats.own = own; data.adm = { v: Date.now(), coins, own };
+      await rpc('admin_save_player', { p_pid: null, p_profile_id: p.profile_id, p_name: null, p_data: data });
+      toast('Saved inventory for ' + plLabel(p) + ' · ' + coins.toLocaleString() + ' coins.', 'ok'); closeModal(); loadPlayers();
+    } catch (e) { m.textContent = e.message; m.className = 'small err'; } };
 }
 // ---------- troll ----------
 const TW_FIELDS = [['maxs', 'Top speed', 0.2, 4], ['engine', 'Acceleration', 0.1, 6], ['brake', 'Braking', 0.1, 5], ['rev', 'Reverse speed', 0.1, 5], ['steer', 'Turning speed', 0.1, 4], ['grip', 'Grip', 0.05, 5], ['drift', 'Drift grip', 0.05, 5], ['dmom', 'Drift speed boost', 0, 6], ['hb', 'Handbrake grip', 0.05, 5], ['off', 'Off-road slowdown', 0, 5]];
