@@ -109,7 +109,7 @@ function plClick(e) {
   if (b.dataset.delp !== undefined) delPlayer(p);
 }
 function modal(html) { $('mBox').innerHTML = html; $('modal').style.display = 'flex'; }
-function closeModal() { $('modal').style.display = 'none'; $('mBox').innerHTML = ''; if (RP) { cancelAnimationFrame(RP.raf); RP = null; } }
+function closeModal() { const _b = document.getElementById('mBox'); if (_b) { _b.onclick = null; _b.onchange = null; } $('modal').style.display = 'none'; $('mBox').innerHTML = ''; if (RP) { cancelAnimationFrame(RP.raf); RP = null; } }
 function editPlayer(p) {
   modal(`<h2>Edit ${esc(plLabel(p))}</h2>
   <div class="row"><span class="dim small" style="width:90px">Name</span><input id="ePName" maxlength="14" value="${esc(plLabel(p))}" ${p.pid ? '' : 'disabled'}></div>
@@ -163,8 +163,8 @@ function editInventory(p) {
   <div class="row"><button class="red" id="invSave">Save inventory</button><button class="mini" id="invCancel">Cancel</button><span id="invMsg" class="small"></span></div>
   <p class="dim small">Players get the change next time they open the game, or within a minute if they're sitting in the menu.</p>`);
   const box = $('mBox');
-  box.addEventListener('change', e => { const l = e.target.closest('.invChk'); if (l) l.classList.toggle('on', e.target.checked); if (e.target.dataset.pick) box.querySelector(`[data-hex="${e.target.dataset.pick}"]`).value = e.target.value.toUpperCase(); });
-  box.addEventListener('click', e => {
+  box.onchange = e => { const l = e.target.closest('.invChk'); if (l) l.classList.toggle('on', e.target.checked); if (e.target.dataset.pick) box.querySelector(`[data-hex="${e.target.dataset.pick}"]`).value = e.target.value.toUpperCase(); };
+  box.onclick = e => {
     const b = e.target.closest('button,b'); if (!b) return; const ci = $('invCoins');
     if (b.dataset.add) ci.value = b.dataset.add === 'zero' ? 0 : Math.max(0, (+ci.value || 0) + +b.dataset.add);
     if (b.dataset.all || b.dataset.none) box.querySelectorAll(`input[data-g="${b.dataset.all || b.dataset.none}"]:not(:disabled)`).forEach(x => { x.checked = !!b.dataset.all; x.closest('.invChk').classList.toggle('on', x.checked); });
@@ -172,7 +172,7 @@ function editInventory(p) {
     if (b.dataset.addc) { const k = b.dataset.addc, inp = box.querySelector(`[data-hex="${k}"]`); let h = inp.value.trim(); if (!h.startsWith('#')) h = '#' + h; h = h.toLowerCase();
       if (!invHex(h)) return toast('Enter a hex code like #FF2A2A', 'err'); const wrap = box.querySelector(`[data-col="${k}"] .invChips`); if (wrap.querySelector(`[data-h="${h}"]`)) return;
       const n = wrap.querySelector('.none'); if (n) n.remove(); wrap.insertAdjacentHTML('beforeend', `<span class="chip" data-h="${h}"><i style="background:${h}"></i>${h.toUpperCase()}<b title="Remove">×</b></span>`); inp.value = ''; }
-  });
+  };
   $('invCancel').onclick = closeModal;
   $('invSave').onclick = async () => { const m = $('invMsg'); m.textContent = 'Saving…'; m.className = 'small dim';
     try {
