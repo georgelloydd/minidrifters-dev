@@ -10,9 +10,10 @@ create table if not exists public.profiles (id text primary key, data jsonb not 
 create table if not exists public.laps (
   id bigint generated always as identity primary key,
   track int not null, pid text not null, name text, color text, body text,
-  lap_ms int not null check (lap_ms > 3000), score int, created_at timestamptz default now(),
+  lap_ms int not null, score int, created_at timestamptz default now(),
   unique (track, pid));
 create index if not exists laps_track_ms on public.laps (track, lap_ms);
+alter table public.laps drop constraint if exists laps_lap_ms_check;   -- no minimum lap time any more
 alter table public.laps add column if not exists replay text;   -- ghost replay of the lap
 
 -- admin 'troll' handling tweaks per player (read by the game, written only by the dev dashboard)
