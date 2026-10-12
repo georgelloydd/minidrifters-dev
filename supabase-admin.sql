@@ -284,8 +284,8 @@ declare k record; nid bigint;
 begin
   select pid, name into k from player_keys where key = p_key; if not found then raise exception 'Sign in to submit tracks.'; end if;
   if (select count(*) from track_submissions where pid = k.pid and status = 'pending') >= 5 then raise exception 'You already have 5 tracks waiting for review.'; end if;
-  if length(trim(coalesce(p_name, ''))) < 1 or length(p_def::text) > 20000 or jsonb_typeof(p_def->'pts') <> 'array'
-     or jsonb_array_length(p_def->'pts') < 4 or jsonb_array_length(p_def->'pts') > 200 then raise exception 'That track is not valid.'; end if;
+  if length(trim(coalesce(p_name, ''))) < 1 or length(p_def::text) > 300000 or jsonb_typeof(p_def->'pts') <> 'array'
+     or jsonb_array_length(p_def->'pts') < 4 or jsonb_array_length(p_def->'pts') > 3000 then raise exception 'That track is not valid.'; end if;
   insert into track_submissions (pid, author, name, def) values (k.pid, k.name, left(trim(p_name), 40), p_def) returning id into nid;
   return nid;
 end $$;
