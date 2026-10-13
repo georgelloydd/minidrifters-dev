@@ -299,10 +299,21 @@ function drawTunnelRoof(g, tr, alpha) {
 function drawBridges(g, tr) {
   const S = (tr.elev || []).filter(s => s.t === 'bridge'); if (!S.length) return; g.save(); g.lineJoin = 'round'; g.lineCap = 'butt';
   for (const s of S) {
-    g.save(); g.translate(18, 20); secPath(g, tr, s, 0); g.strokeStyle = 'rgba(0,0,0,.32)'; g.lineWidth = tr.w + 36; g.stroke(); g.restore();
-    secPath(g, tr, s, 0); g.strokeStyle = '#9aa0a8'; g.lineWidth = tr.w + 32; g.stroke(); g.strokeStyle = tr.th.road || '#3a3c42'; g.lineWidth = tr.w; g.stroke();
+    // the deck rises smoothly out of the road: shadow, sides and railings all grow over a ramp at each end
+    const I = secIdx(tr, s, 2), P = I.map(i => tr.pts[i]), n = P.length, D = [0];
+    for (let k = 1; k < n; k++) D[k] = D[k - 1] + Math.hypot(P[k][0] - P[k - 1][0], P[k][1] - P[k - 1][1]);
+    const tot = D[n - 1] || 1, ramp = Math.max(1, Math.min(tot * 0.3, 280)), H = D.map(d => { const u = Math.max(0, Math.min(1, Math.min(d, tot - d) / ramp)); return u * u * (3 - 2 * u); });
+    const at = (k, o, dx, dy) => { const p = P[k], a = tr.dirs[I[k]]; return [p[0] - Math.sin(a) * o + (dx || 0), p[1] + Math.cos(a) * o + (dy || 0)]; };
+    const band = (r, sx, sy) => { g.beginPath(); for (let k = 0; k < n; k++) { const q = at(k, r(k), sx * H[k], sy * H[k]); k ? g.lineTo(q[0], q[1]) : g.moveTo(q[0], q[1]); } for (let k = n - 1; k >= 0; k--) { const q = at(k, -r(k), sx * H[k], sy * H[k]); g.lineTo(q[0], q[1]); } g.closePath(); g.fill(); };
+    g.fillStyle = 'rgba(0,0,0,.32)'; band(k => tr.w / 2 + 18 * H[k], 18, 20);
+    g.fillStyle = '#9aa0a8'; band(k => tr.w / 2 + 16 * H[k], 0, 0);
+    secPath(g, tr, s, 0); g.strokeStyle = tr.th.road || '#3a3c42'; g.lineWidth = tr.w; g.stroke();
     g.setLineDash([40, 50]); g.strokeStyle = 'rgba(255,255,255,.35)'; g.lineWidth = 4; g.stroke(); g.setLineDash([]);
-    for (const sd of [-1, 1]) { secPath(g, tr, s, (tr.w / 2 + 14) * sd); g.strokeStyle = '#e6e9ee'; g.lineWidth = 6; g.stroke(); g.setLineDash([5, 28]); g.strokeStyle = '#4a4d55'; g.lineWidth = 10; g.stroke(); g.setLineDash([]); }
+    let k0 = 0, k1 = n - 1; while (k0 < n && H[k0] < 0.2) k0++; while (k1 > 0 && H[k1] < 0.2) k1--;
+    if (k1 > k0) for (const sd of [-1, 1]) {
+      g.beginPath(); for (let k = k0; k <= k1; k++) { const q = at(k, (tr.w / 2 + 14 * H[k]) * sd); k > k0 ? g.lineTo(q[0], q[1]) : g.moveTo(q[0], q[1]); }
+      g.lineCap = 'round'; g.strokeStyle = '#e6e9ee'; g.lineWidth = 6; g.stroke(); g.lineCap = 'butt'; g.setLineDash([5, 28]); g.strokeStyle = '#4a4d55'; g.lineWidth = 10; g.stroke(); g.setLineDash([]);
+    }
   }
   g.restore();
 }
