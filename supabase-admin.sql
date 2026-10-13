@@ -339,4 +339,44 @@ $$;
 grant execute on function public.submit_lap(int, text, text, text, text, int, int, text, jsonb) to anon;
 grant execute on function public.set_look(text, jsonb) to anon;
 
+-- ===== Deleted lap times stay deleted =====
+-- Game tabs that are still open re-upload their local best lap. Every deleted time is remembered here,
+-- and the trigger silently ignores any upload of that exact time again. A genuinely new lap still counts.
+create table if not exists public.lap_deleted (track int not null, pid text not null, lap_ms int not null, deleted_at timestamptz default now(), primary key (track, pid, lap_ms));
+alter table public.lap_deleted enable row level security;
+
+create or replace function public.md_lap_guard() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  if exists (select 1 from lap_deleted d where d.track = new.track and d.pid = new.pid and abs(d.lap_ms - new.lap_ms) <= 1) then return null; end if;
+  return new;
+end $$;
+drop trigger if exists md_lap_guard on public.laps;
+create trigger md_lap_guard before insert or update of lap_ms on public.laps for each row execute function public.md_lap_guard();
+
+create or replace function public.admin_delete_lap(p_secret text, p_id bigint) returns void
+language plpgsql security definer set search_path = public, extensions as $$
+begin
+  if not md_is_admin(p_secret) then raise exception 'not allowed'; end if;
+  insert into lap_deleted (track, pid, lap_ms) select track, pid, lap_ms from laps where id = p_id on conflict do nothing;
+  delete from laps where id = p_id;
+end $$;
+
+create or replace function public.admin_clear_track(p_secret text, p_track int) returns void
+language plpgsql security definer set search_path = public, extensions as $$
+begin
+  if not md_is_admin(p_secret) then raise exception 'not allowed'; end if;
+  insert into lap_deleted (track, pid, lap_ms) select track, pid, lap_ms from laps where track = p_track on conflict do nothing;
+  delete from laps where track = p_track;
+end $$;
+
+create or replace function public.admin_purge_all(p_secret text) returns bigint
+language plpgsql security definer set search_path = public, extensions as $$
+declare n bigint;
+begin
+  if not md_is_admin(p_secret) then perform pg_sleep(1); raise exception 'not allowed'; end if;
+  insert into lap_deleted (track, pid, lap_ms) select track, pid, lap_ms from laps on conflict do nothing;
+  delete from laps where true; get diagnostics n = row_count; return n;
+end $$;
+
 notify pgrst, 'reload schema';
