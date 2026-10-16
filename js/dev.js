@@ -189,7 +189,7 @@ function editInventory(p) {
 const TW_FIELDS = [['maxs', 'Top speed', 0.2, 4], ['engine', 'Acceleration', 0.1, 6], ['brake', 'Braking', 0.1, 5], ['rev', 'Reverse speed', 0.1, 5], ['steer', 'Turning speed', 0.1, 4], ['grip', 'Grip', 0.05, 5], ['drift', 'Drift grip', 0.05, 5], ['dmom', 'Drift speed boost', 0, 6], ['hb', 'Handbrake grip', 0.05, 5], ['off', 'Off-road slowdown', 0, 5]];
 const TW_PRESETS = { Rocket: { maxs: 2.2, engine: 3 }, Snail: { maxs: 0.35, engine: 0.4 }, Ice: { grip: 0.15, drift: 0.25, hb: 0.3 }, 'Drift god': { drift: 1.8, dmom: 3, steer: 1.3 }, 'Shopping trolley': { steer: 0.35, grip: 0.4 }, 'No brakes': { brake: 0.1, rev: 0.1 }, Inverted: { inv: 1 } };
 let TRW = {};
-function trSummary(t) { return Object.keys(t || {}).filter(k => k === 'inv' ? t.inv : t[k] !== 1).map(k => k === 'inv' ? 'inverted steering' : ((TW_FIELDS.find(f => f[0] === k) || [k, k])[1] + ' ×' + t[k])).join(', ') || 'default'; }
+function trSummary(t) { return Object.keys(t || {}).filter(k => k === 'inv' || k === 'rl' ? t[k] : t[k] !== 1).map(k => k === 'inv' ? 'inverted steering' : k === 'rl' ? '🚀 rocket launcher' : ((TW_FIELDS.find(f => f[0] === k) || [k, k])[1] + ' ×' + t[k])).join(', ') || 'default'; }
 function trFill() {
   const s = $('trP'), v = s.value, P = PL.filter(p => p.pid);
   s.innerHTML = '<option value="">Choose a player…</option>' + P.map(p => `<option value="${esc(p.pid)}">${esc(plLabel(p))} · ${esc(p.pid.slice(0, 10))}${p.tweaks ? ' 😈' : ''}</option>`).join('');
@@ -201,16 +201,18 @@ function trShow(keep) {
   $('trBox').innerHTML = (p ? '' : '<p class="dim small">Pick a player above, or press Troll next to them on the Players tab.</p>') +
     `<div class="row wrap"><span class="dim small">Presets:</span>${Object.keys(TW_PRESETS).map(k => `<button class="mini" data-trp="${esc(k)}" ${dis}>${esc(k)}</button>`).join('')}</div>` +
     TW_FIELDS.map(([k, label, lo, hi]) => { const v = TRW[k] ?? 1; return `<div class="row"><span style="width:160px">${label}</span><input type="range" min="${lo}" max="${hi}" step="0.05" value="${v}" data-tw="${k}" style="flex:1" ${dis}><span class="dim">×</span><input type="number" class="twn mono" step="any" min="0" value="${+v}" data-twn="${k}" title="Type any value, it is not limited to the slider" ${dis}></div>`; }).join('') +
-    `<label class="chk"><input type="checkbox" id="twInv" ${TRW.inv ? 'checked' : ''} ${dis}> Inverted steering (left is right)</label>`;
+    `<label class="chk"><input type="checkbox" id="twInv" ${TRW.inv ? 'checked' : ''} ${dis}> Inverted steering (left is right)</label>` +
+    `<label class="chk"><input type="checkbox" id="twRl" ${TRW.rl ? 'checked' : ''} ${dis}> 🚀 Rocket launcher (they press X to fire; cars they hit explode and respawn)</label>`;
   $('trBox').querySelectorAll('[data-tw]').forEach(r => r.oninput = () => { TRW[r.dataset.tw] = +r.value; $('trBox').querySelector('[data-twn="' + r.dataset.tw + '"]').value = +r.value; });
   $('trBox').querySelectorAll('[data-twn]').forEach(n => n.oninput = () => { const v = parseFloat(n.value); if (!isFinite(v) || v < 0) return; TRW[n.dataset.twn] = v; const r = $('trBox').querySelector('[data-tw="' + n.dataset.twn + '"]'); r.value = Math.min(+r.max, Math.max(+r.min, v)); });
   $('twInv').onchange = e => { TRW.inv = e.target.checked ? 1 : 0; };
-  $('trBox').querySelectorAll('[data-trp]').forEach(b => b.onclick = () => { TRW = Object.assign({}, TW_PRESETS[b.dataset.trp]); trShow(true); });
+  $('twRl').onchange = e => { TRW.rl = e.target.checked ? 1 : 0; };
+  $('trBox').querySelectorAll('[data-trp]').forEach(b => b.onclick = () => { TRW = Object.assign({}, TW_PRESETS[b.dataset.trp], TRW.rl ? { rl: 1 } : {}); trShow(true); });
   $('trSave').disabled = $('trReset').disabled = !p;
 }
 async function trSave() {
   const pid = $('trP').value; if (!pid) return; const d = {};
-  for (const [k] of TW_FIELDS) if (TRW[k] != null && Math.abs(TRW[k] - 1) > 0.001) d[k] = Math.round(TRW[k] * 1000) / 1000; if (TRW.inv) d.inv = 1;
+  for (const [k] of TW_FIELDS) if (TRW[k] != null && Math.abs(TRW[k] - 1) > 0.001) d[k] = Math.round(TRW[k] * 1000) / 1000; if (TRW.inv) d.inv = 1; if (TRW.rl) d.rl = 1;
   try { await rpc('admin_set_tweaks', { p_pid: pid, p_data: Object.keys(d).length ? d : null }); toast(Object.keys(d).length ? 'Saved. It applies to their car within about 15 seconds.' : 'Everything is default, so their tweaks were cleared.', 'ok'); await loadPlayers(); } catch (e) { toast(e.message, 'err'); }
 }
 async function trReset() {
@@ -286,6 +288,9 @@ async function deployGame() {
     const files = Object.assign({}, GAME_FILES);
     if ($('dpSb').checked && DCFG.sbUrl && DCFG.sbKey) { files['js/config.js'] = b64('// ===== Online services (written by the Mini Drifters dev site) =====\nconst ONLINE = {\n  SUPABASE_URL: ' + JSON.stringify(sbBase()) + ',\n  SUPABASE_ANON_KEY: ' + JSON.stringify(DCFG.sbKey.trim()) + ',\n  GAME_SERVER: ' + JSON.stringify((DCFG.srv || '').trim()) + ',\n};\n'); dlog('Writing js/config.js with your Supabase project', 'dim'); }
     else { const ex = await gh(repo, 'GET', '/contents/js/config.js?ref=' + branch, null, [404]); if (ex.status === 200) { delete files['js/config.js']; dlog('Keeping the repo\'s existing js/config.js', 'dim'); } }
+    const vstamp = new Date().toISOString().replace(/\D/g, '').slice(0, 14), unb64 = x => new TextDecoder().decode(Uint8Array.from(atob(x), c => c.charCodeAt(0)));
+    for (const k of Object.keys(files)) if (/\.html$/.test(k)) { try { const h = unb64(files[k]); if (/\?v=\d+/.test(h)) files[k] = b64(h.replace(/\?v=\d+/g, '?v=' + vstamp)); } catch (e) { } }
+    dlog('Cache-busting scripts with ?v=' + vstamp, 'dim');
     const tree = [], paths = Object.keys(files); let n = 0;
     for (const path of paths) { const b = (await gh(repo, 'POST', '/git/blobs', { content: files[path], encoding: 'base64' })).data; tree.push({ path, mode: '100644', type: 'blob', sha: b.sha }); dlog(`  uploaded ${path} (${++n}/${paths.length})`, 'dim'); }
     const t = (await gh(repo, 'POST', '/git/trees', { base_tree: base, tree })).data;
@@ -343,6 +348,9 @@ async function deployServer() {
     const sub = repo.toLowerCase() === String(DCFG.gameRepo || '').toLowerCase() ? 'server/' : '';
     const files = Object.assign({}, SERVER_FILES);
     if (sub) files['render.yaml'] = btoa(atob(files['render.yaml']).replace('    runtime: node\n', '    runtime: node\n    rootDir: server\n'));
+    const vstamp = new Date().toISOString().replace(/\D/g, '').slice(0, 14), unb64 = x => new TextDecoder().decode(Uint8Array.from(atob(x), c => c.charCodeAt(0)));
+    for (const k of Object.keys(files)) if (/\.html$/.test(k)) { try { const h = unb64(files[k]); if (/\?v=\d+/.test(h)) files[k] = b64(h.replace(/\?v=\d+/g, '?v=' + vstamp)); } catch (e) { } }
+    dlog('Cache-busting scripts with ?v=' + vstamp, 'dim');
     const tree = [], paths = Object.keys(files); let n = 0;
     for (const p of paths) { const b = (await gh(repo, 'POST', '/git/blobs', { content: files[p], encoding: 'base64' })).data; const path = (p === 'render.yaml' ? '' : sub) + p; tree.push({ path, mode: '100644', type: 'blob', sha: b.sha }); slog(`  uploaded ${path} (${++n}/${paths.length})`, 'dim'); }
     const t = (await gh(repo, 'POST', '/git/trees', { base_tree: base, tree })).data;
