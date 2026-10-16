@@ -379,4 +379,27 @@ begin
   delete from laps where true; get diagnostics n = row_count; return n;
 end $$;
 
+-- ===== device (cookie) links: which accounts were used from the same browser. Written by the game, read only by the admin. =====
+create table if not exists public.player_devices (dev text not null, pid text not null, first_seen timestamptz default now(), last_seen timestamptz default now(), primary key (dev, pid));
+create index if not exists player_devices_pid on public.player_devices (pid);
+alter table public.player_devices enable row level security;   -- no policies = no public access
+
+create or replace function public.report_device(p_dev text, p_pid text) returns void
+language plpgsql security definer set search_path = public, extensions as $$
+begin
+  if p_dev is null or p_pid is null or length(p_dev) not between 6 and 60 or length(p_pid) not between 1 and 60 then return; end if;
+  insert into player_devices (dev, pid) values (p_dev, p_pid) on conflict (dev, pid) do update set last_seen = now();
+end $$;
+
+create or replace function public.admin_list_devices(p_secret text)
+returns table (dev text, pid text, first_seen timestamptz, last_seen timestamptz)
+language plpgsql security definer set search_path = public, extensions as $$
+#variable_conflict use_column
+begin
+  if not md_is_admin(p_secret) then perform pg_sleep(1); raise exception 'not allowed'; end if;
+  return query select d.dev, d.pid, d.first_seen, d.last_seen from player_devices d order by d.last_seen desc limit 20000;
+end $$;
+grant execute on function public.report_device(text, text) to anon;
+grant execute on function public.admin_list_devices(text) to anon;
+
 notify pgrst, 'reload schema';

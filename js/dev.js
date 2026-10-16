@@ -83,30 +83,55 @@ function enterApp() {
 }
 
 // ---------- players ----------
-let PL = [], PLV = [];
+let PL = [], PLV = [], DEVS = [], DEVERR = '';
 const plLabel = p => p.name || (p.data && p.data.cfg && p.data.cfg.name) || 'Unnamed';
 async function loadPlayers() {
   $('plBody').innerHTML = '<tr><td colspan="6" class="dim">Loading…</td></tr>';
+  try { DEVS = await rpc('admin_list_devices', {}) || []; DEVERR = ''; } catch (e) { DEVS = []; DEVERR = e.message; }
   try { PL = await rpc('admin_list_players', {}) || []; }
   catch (e) { $('plBody').innerHTML = `<tr><td colspan="6" class="err">${esc(/admin_list_players|PGRST202|404/.test(e.message) ? 'Run the updated SQL in Supabase first (it adds the new player tools), then press Refresh.' : e.message)}</td></tr>`; return false; }
   renderPlayers(); trFill(); return true;
 }
+// accounts that were used from the same browser (cookie id) as this player
+function altsOf(p) {
+  if (!p || !p.pid) return [];
+  const mine = new Set(DEVS.filter(x => x.pid === p.pid).map(x => x.dev)), out = new Map();
+  for (const x of DEVS) if (x.pid !== p.pid && mine.has(x.dev)) { const o = out.get(x.pid) || { pid: x.pid, n: 0, last: x.last_seen }; o.n++; if (x.last_seen > o.last) o.last = x.last_seen; out.set(x.pid, o); }
+  return [...out.values()].sort((a, b) => (a.last < b.last) - (a.last > b.last));
+}
+function showAlts(p) {
+  const A = altsOf(p), find = pid => PL.find(q => q.pid === pid);
+  modal(`<h2>Accounts on the same browser as ${esc(plLabel(p))}</h2><p class="dim small">Matched by the cookie the game leaves in each browser, so these are probably the same person (or someone sharing a device). Clearing cookies and site data creates a fresh id, so a determined player can still dodge this.</p>` +
+    (A.length ? '<table style="width:100%">' + A.map((a, i) => { const q = find(a.pid), ban = q && q.tweaks && q.tweaks.ban; return `<tr><td><b>${q ? esc(plLabel(q)) : '<span class="dim">deleted account</span>'}</b>${ban ? ' ⛔' : ''}</td><td class="mono dim">${esc(a.pid.slice(0, 10))}</td><td class="dim small">${a.n} shared browser${a.n > 1 ? 's' : ''} · last ${new Date(a.last).toLocaleString()}</td><td>${q && q.pid ? `<button class="mini red" data-altban="${i}">${ban ? 'Unban' : 'Ban'}</button>` : ''}</td></tr>`; }).join('') + '</table>' : '<p class="dim">No other accounts have been used from this player\'s browsers.</p>') +
+    `<div class="row"><button class="mini" id="altClose">Close</button></div>`);
+  $('altClose').onclick = closeModal;
+  document.querySelectorAll('[data-altban]').forEach(b => b.onclick = async () => { const q = find(A[+b.dataset.altban].pid); if (q) { closeModal(); await banPlayer(q); } });
+}
 function renderPlayers() {
   const q = $('plQ').value.trim().toLowerCase();
   PLV = PL.filter(p => !q || [plLabel(p), p.key, p.pid, p.profile_id].some(v => String(v || '').toLowerCase().includes(q)));
-  $('plCount').textContent = PLV.length + ' of ' + PL.length + ' players';
+  $('plCount').textContent = PLV.length + ' of ' + PL.length + ' players' + (DEVERR ? ' · alt detection off: run the updated SQL in Supabase, then Refresh' : '');
   if (!PLV.length) { $('plBody').innerHTML = `<tr><td colspan="6" class="dim">${PL.length ? 'Nobody matches that filter.' : 'No players yet.'}</td></tr>`; return; }
   $('plBody').innerHTML = PLV.map((p, i) => { const s = (p.data && p.data.stats) || {}, prof = p.profile_id ? `${s.sessions || 0} sessions · ${s.races || 0} races · ${(+s.dist || 0).toFixed(1)} km · <b style="color:#ffd60a">${Math.round(s.coins || 0).toLocaleString()}</b> coins` : '<span class="dim">no profile</span>';
-    return `<tr><td><b>${esc(plLabel(p))}</b>${p.tweaks ? ' <span title="Trolled">😈</span>' : ''}</td><td class="mono">${p.key ? `<span class="key" data-i="${i}">MD-••••-••••-••••</span> <button class="mini" data-show="${i}">Show</button> <button class="mini" data-copy="${i}">Copy</button>` : '<span class="dim">no key</span>'}</td><td class="mono dim">${esc((p.pid || '—').slice(0, 10))}</td><td class="small">${prof}</td><td class="dim">${p.updated_at ? new Date(p.updated_at).toLocaleString() : ''}</td><td style="white-space:nowrap"><button class="mini" data-inv="${i}">Inventory</button> <button class="mini" data-edit="${i}">Edit</button> <button class="mini red" data-delp="${i}">Delete</button></td></tr>`; }).join('');
+    return `<tr><td><b>${esc(plLabel(p))}</b>${p.tweaks && p.tweaks.ban ? ' <span title="Banned">⛔</span>' : ''}${altsOf(p).length ? ` <span title="Shares a browser with ${altsOf(p).length} other account(s)">👥${altsOf(p).length}</span>` : ''}${p.tweaks && Object.keys(p.tweaks).some(k => k !== 'ban') ? ' <span title="Trolled">😈</span>' : ''}</td><td class="mono">${p.key ? `<span class="key" data-i="${i}">MD-••••-••••-••••</span> <button class="mini" data-show="${i}">Show</button> <button class="mini" data-copy="${i}">Copy</button>` : '<span class="dim">no key</span>'}</td><td class="mono dim">${esc((p.pid || '—').slice(0, 10))}</td><td class="small">${prof}</td><td class="dim">${p.updated_at ? new Date(p.updated_at).toLocaleString() : ''}</td><td style="white-space:nowrap"><button class="mini" data-inv="${i}">Inventory</button> <button class="mini" data-edit="${i}">Edit</button> ${altsOf(p).length ? `<button class="mini" data-alts="${i}">Alts</button> ` : ''}<button class="mini red" data-ban="${i}" ${p.pid ? '' : 'disabled'}>${p.tweaks && p.tweaks.ban ? 'Unban' : 'Ban'}</button> <button class="mini red" data-delp="${i}">Delete</button></td></tr>`; }).join('');
 }
 function plClick(e) {
-  const b = e.target.closest('button'); if (!b) return; const p = PLV[+(b.dataset.show ?? b.dataset.copy ?? b.dataset.inv ?? b.dataset.edit ?? b.dataset.troll ?? b.dataset.delp)]; if (!p) return;
+  const b = e.target.closest('button'); if (!b) return; const p = PLV[+(b.dataset.show ?? b.dataset.copy ?? b.dataset.inv ?? b.dataset.edit ?? b.dataset.troll ?? b.dataset.ban ?? b.dataset.alts ?? b.dataset.delp)]; if (!p) return;
   if (b.dataset.show !== undefined) { const s = document.querySelector(`.key[data-i="${b.dataset.show}"]`); const on = b.textContent === 'Show'; s.textContent = on ? p.key : 'MD-••••-••••-••••'; b.textContent = on ? 'Hide' : 'Show'; }
   if (b.dataset.copy !== undefined) navigator.clipboard.writeText(p.key).then(() => toast('Key copied for ' + plLabel(p) + '. Send it to them privately: anyone with it can use their account.', 'ok'));
   if (b.dataset.edit !== undefined) editPlayer(p);
   if (b.dataset.inv !== undefined) editInventory(p);
   if (b.dataset.troll !== undefined) { setTab('troll'); $('trP').value = p.pid; trShow(); }
+  if (b.dataset.ban !== undefined) banPlayer(p);
+  if (b.dataset.alts !== undefined) showAlts(p);
   if (b.dataset.delp !== undefined) delPlayer(p);
+}
+async function banPlayer(p) {
+  const was = !!(p.tweaks && p.tweaks.ban), name = plLabel(p);
+  if (!was && !confirm(`Ban ${name}?\n\nTheir game shows a banned screen on every device where they have played, and stays blocked (even as a guest) until you press Unban.`)) return;
+  const d = Object.assign({}, p.tweaks || {}); if (was) delete d.ban; else d.ban = 1;
+  try { await rpc('admin_set_tweaks', { p_pid: p.pid, p_data: Object.keys(d).length ? d : null }); toast(was ? name + ' is unbanned. Their game unlocks within about 10 seconds.' : name + ' is banned. Their game locks within about 10 seconds.', 'ok'); await loadPlayers(); }
+  catch (e) { toast(e.message, 'err'); }
 }
 function modal(html) { $('mBox').innerHTML = html; $('modal').style.display = 'flex'; }
 function closeModal() { const _b = document.getElementById('mBox'); if (_b) { _b.onclick = null; _b.onchange = null; } $('modal').style.display = 'none'; $('mBox').innerHTML = ''; if (RP) { cancelAnimationFrame(RP.raf); RP = null; } }
@@ -189,7 +214,7 @@ function editInventory(p) {
 const TW_FIELDS = [['maxs', 'Top speed', 0.2, 4], ['engine', 'Acceleration', 0.1, 6], ['brake', 'Braking', 0.1, 5], ['rev', 'Reverse speed', 0.1, 5], ['steer', 'Turning speed', 0.1, 4], ['grip', 'Grip', 0.05, 5], ['drift', 'Drift grip', 0.05, 5], ['dmom', 'Drift speed boost', 0, 6], ['hb', 'Handbrake grip', 0.05, 5], ['off', 'Off-road slowdown', 0, 5]];
 const TW_PRESETS = { Rocket: { maxs: 2.2, engine: 3 }, Snail: { maxs: 0.35, engine: 0.4 }, Ice: { grip: 0.15, drift: 0.25, hb: 0.3 }, 'Drift god': { drift: 1.8, dmom: 3, steer: 1.3 }, 'Shopping trolley': { steer: 0.35, grip: 0.4 }, 'No brakes': { brake: 0.1, rev: 0.1 }, Inverted: { inv: 1 } };
 let TRW = {};
-function trSummary(t) { return Object.keys(t || {}).filter(k => k === 'inv' || k === 'rl' ? t[k] : t[k] !== 1).map(k => k === 'inv' ? 'inverted steering' : k === 'rl' ? '🚀 rocket launcher' : ((TW_FIELDS.find(f => f[0] === k) || [k, k])[1] + ' ×' + t[k])).join(', ') || 'default'; }
+function trSummary(t) { return Object.keys(t || {}).filter(k => k === 'inv' || k === 'rl' || k === 'ban' ? t[k] : t[k] !== 1).map(k => k === 'inv' ? 'inverted steering' : k === 'rl' ? '🚀 rocket launcher' : k === 'ban' ? '⛔ banned' : ((TW_FIELDS.find(f => f[0] === k) || [k, k])[1] + ' ×' + t[k])).join(', ') || 'default'; }
 function trFill() {
   const s = $('trP'), v = s.value, P = PL.filter(p => p.pid);
   s.innerHTML = '<option value="">Choose a player…</option>' + P.map(p => `<option value="${esc(p.pid)}">${esc(plLabel(p))} · ${esc(p.pid.slice(0, 10))}${p.tweaks ? ' 😈' : ''}</option>`).join('');
@@ -207,22 +232,22 @@ function trShow(keep) {
   $('trBox').querySelectorAll('[data-twn]').forEach(n => n.oninput = () => { const v = parseFloat(n.value); if (!isFinite(v) || v < 0) return; TRW[n.dataset.twn] = v; const r = $('trBox').querySelector('[data-tw="' + n.dataset.twn + '"]'); r.value = Math.min(+r.max, Math.max(+r.min, v)); });
   $('twInv').onchange = e => { TRW.inv = e.target.checked ? 1 : 0; };
   $('twRl').onchange = e => { TRW.rl = e.target.checked ? 1 : 0; };
-  $('trBox').querySelectorAll('[data-trp]').forEach(b => b.onclick = () => { TRW = Object.assign({}, TW_PRESETS[b.dataset.trp], TRW.rl ? { rl: 1 } : {}); trShow(true); });
+  $('trBox').querySelectorAll('[data-trp]').forEach(b => b.onclick = () => { TRW = Object.assign({}, TW_PRESETS[b.dataset.trp], TRW.rl ? { rl: 1 } : {}, TRW.ban ? { ban: 1 } : {}); trShow(true); });
   $('trSave').disabled = $('trReset').disabled = !p;
 }
 async function trSave() {
   const pid = $('trP').value; if (!pid) return; const d = {};
-  for (const [k] of TW_FIELDS) if (TRW[k] != null && Math.abs(TRW[k] - 1) > 0.001) d[k] = Math.round(TRW[k] * 1000) / 1000; if (TRW.inv) d.inv = 1; if (TRW.rl) d.rl = 1;
+  for (const [k] of TW_FIELDS) if (TRW[k] != null && Math.abs(TRW[k] - 1) > 0.001) d[k] = Math.round(TRW[k] * 1000) / 1000; if (TRW.inv) d.inv = 1; if (TRW.rl) d.rl = 1; if (TRW.ban) d.ban = 1;
   try { await rpc('admin_set_tweaks', { p_pid: pid, p_data: Object.keys(d).length ? d : null }); toast(Object.keys(d).length ? 'Saved. It applies to their car within about 15 seconds.' : 'Everything is default, so their tweaks were cleared.', 'ok'); await loadPlayers(); } catch (e) { toast(e.message, 'err'); }
 }
 async function trReset() {
   const pid = $('trP').value; if (!pid) return;
-  try { await rpc('admin_set_tweaks', { p_pid: pid, p_data: null }); TRW = {}; toast('Reset to default. Their car goes back to normal within about 15 seconds.', 'ok'); await loadPlayers(); } catch (e) { toast(e.message, 'err'); }
+  try { const bp = PL.find(q => q.pid === pid); await rpc('admin_set_tweaks', { p_pid: pid, p_data: bp && bp.tweaks && bp.tweaks.ban ? { ban: 1 } : null }); TRW = {}; toast('Reset to default. Their car goes back to normal within about 15 seconds.', 'ok'); await loadPlayers(); } catch (e) { toast(e.message, 'err'); }
 }
 async function trResetAll() {
-  const T = PL.filter(p => p.pid && p.tweaks); if (!T.length) return toast('Nobody is trolled right now.', 'ok');
+  const T = PL.filter(p => p.pid && p.tweaks && Object.keys(p.tweaks).some(k => k !== 'ban')); if (!T.length) return toast('Nobody is trolled right now.', 'ok');
   if (!confirm(`Reset ${T.length} trolled player${T.length > 1 ? 's' : ''} back to normal handling?`)) return;
-  let bad = 0; await Promise.all(T.map(p => rpc('admin_set_tweaks', { p_pid: p.pid, p_data: null }).catch(() => bad++)));
+  let bad = 0; await Promise.all(T.map(p => rpc('admin_set_tweaks', { p_pid: p.pid, p_data: p.tweaks.ban ? { ban: 1 } : null }).catch(() => bad++)));
   TRW = {}; toast(bad ? `Reset ${T.length - bad}, ${bad} failed. Try again.` : `All ${T.length} reset. Cars go back to normal within about 15 seconds.`, bad ? 'err' : 'ok'); await loadPlayers();
 }
 // ---------- replay viewer (cheat checks) ----------
