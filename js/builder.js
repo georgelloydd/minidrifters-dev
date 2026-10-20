@@ -24,7 +24,12 @@ const withSeed = (d, i) => Object.assign({}, d, { seed: d.seed || (i * 977 + 13)
 // ---------- data ----------
 async function BLD_init() {
   const p = await loadPublished(); BLD.pub = p.list; let drafts = null; try { drafts = JSON.parse(localStorage.getItem('md_dev_tracks') || 'null'); } catch (e) { }
-  BLD.list = Array.isArray(drafts) && drafts.length ? drafts : clone(BLD.pub); $('bFrom').textContent = 'Published tracks loaded from the ' + p.from + '.';
+  // a draft with fewer tracks than what's published is an old leftover (e.g. from an earlier dev site): never let it hide tracks
+  let note = '';
+  if (Array.isArray(drafts) && drafts.length && drafts.length < BLD.pub.length) { try { localStorage.setItem('md_dev_tracks_old', JSON.stringify(drafts)); } catch (e) { } drafts = null; note = ' An old draft had fewer tracks than the published list, so it was set aside and the published tracks were loaded.'; }
+  BLD.list = Array.isArray(drafts) && drafts.length ? drafts : clone(BLD.pub);
+  $('bFrom').textContent = 'Published tracks loaded from ' + p.from + '.' + note + (TRACK_STORE === 'missing' ? ' Supabase track storage is not set up yet: run the SQL from Setup once.' : '');
+  if (note) setTimeout(() => toast(note.trim(), ''), 800);
   bindBuilder(); bindWorldUI(); F1_init(); select(0); BLD_resize();
 }
 function saveDraft() { try { localStorage.setItem('md_dev_tracks', JSON.stringify(BLD.list)); } catch (e) { if (!BLD._qw) { BLD._qw = 1; toast('Browser storage is full (screenshots are big). Publish to free space; drafts may not survive a reload.', 'err'); } } listUI(); }
@@ -137,8 +142,11 @@ function testDrive() {
 }
 async function publish() {
   const ch = BLD.list.map((t, i) => edited(i) ? (i >= BLD.pub.length ? 'new: ' : 'edited: ') + t.name : null).filter(Boolean);
+  const gone = BLD.pub.filter(t => !BLD.list.some(u => u.name === t.name)).map(t => t.name);
+  if (BLD.list.length < BLD.pub.length) ch.push('REMOVED ' + (BLD.pub.length - BLD.list.length) + ' track(s)' + (gone.length ? ': ' + gone.join(', ') : ''));
   if (!ch.length) return toast('Nothing to publish: no changes since the last publish.', 'ok');
-  if (!confirm('Publish to ' + DCFG.gameRepo + '/tracks.json?\n\n' + ch.join('\n') + '\n\nThe live game picks it up within a minute or two.')) return;
+  if (!confirm('Publish tracks to the game (saved in Supabase)?\n\n' + ch.join('\n') + '\n\nThe live game picks it up on its next load. Older versions stay in History.')) return;
+  if (BLD.list.length < BLD.pub.length && !confirm('This removes ' + (BLD.pub.length - BLD.list.length) + ' track(s) from the game. Are you sure? (You can bring them back from History.)')) return;
   $('bPub').disabled = true; $('bPub').textContent = 'PUBLISHING…';
   try { BLD.list = await uploadTrackImages(BLD.list); const c = await publishTracks(BLD.list, 'Tracks: ' + ch.join(', ').slice(0, 180)); const lc = BLD.list.map((t, i) => layoutChanged(i) ? i : -1).filter(i => i >= 0); BLD.pub = clone(BLD.list); saveDraft(); panelUI(); toast('Published (' + (c && c.sha ? c.sha.slice(0, 7) : 'ok') + '). Hard-refresh the game in a minute to see it.', 'ok'); if (lc.length) toast('Layouts changed on: ' + lc.map(i => BLD.list[i].name).join(', ') + '. Old lap times there may no longer be fair; you can clear them in Leaderboards.', ''); }
   catch (e) { toast('Publish failed: ' + e.message, 'err'); }
@@ -152,6 +160,7 @@ function bindBuilder() {
   $('bReal').onchange = e => { BLD.real = e.target.checked; rebuild(); }; $('bTest').onclick = testDrive; $('bPub').onclick = publish;
   $('bExport').onclick = () => { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([JSON.stringify({ version: 1, tracks: BLD.list }, null, 1)], { type: 'application/json' })); a.download = 'tracks.json'; a.click(); };
   $('bImport').onclick = () => $('bFile').click(); $('bFile').onchange = async e => { try { const j = JSON.parse(await e.target.files[0].text()), L = Array.isArray(j) ? j : j.tracks; if (!Array.isArray(L) || !L.every(t => Array.isArray(t.pts))) throw new Error('No tracks in that file'); if (!confirm('Replace your drafts with ' + L.length + ' tracks from the file?')) return; BLD.list = L; saveDraft(); select(0); } catch (er) { toast(er.message, 'err'); } e.target.value = ''; };
+  $('bHist').onclick = trackHistory;
   $('bDiscard').onclick = () => { if (!confirm('Throw away all unpublished changes and go back to the published tracks?')) return; BLD.list = clone(BLD.pub); BLD.undo = []; BLD.redo = []; saveDraft(); select(Math.min(BLD.cur, BLD.list.length - 1)); };
   $('pName').oninput = () => change(d => d.name = $('pName').value.slice(0, 32) || 'Track', BLD._nameSnap); $('pName').onfocus = () => { snap(); BLD._nameSnap = true; }; $('pName').onblur = () => BLD._nameSnap = false;
   $('pW').onpointerdown = () => snap(); $('pW').oninput = () => change(d => d.width = +$('pW').value, true);
