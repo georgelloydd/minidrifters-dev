@@ -121,7 +121,7 @@ function plClick(e) {
   if (b.dataset.copy !== undefined) navigator.clipboard.writeText(p.key).then(() => toast('Key copied for ' + plLabel(p) + '. Send it to them privately: anyone with it can use their account.', 'ok'));
   if (b.dataset.edit !== undefined) editPlayer(p);
   if (b.dataset.inv !== undefined) editInventory(p);
-  if (b.dataset.troll !== undefined) { setTab('troll'); $('trP').value = p.pid; trShow(); }
+  if (b.dataset.troll !== undefined) { setTab('troll'); TRSEL = [p.pid]; trSelChanged(0, true); }
   if (b.dataset.ban !== undefined) banPlayer(p);
   if (b.dataset.alts !== undefined) showAlts(p);
   if (b.dataset.delp !== undefined) delPlayer(p);
@@ -213,36 +213,76 @@ function editInventory(p) {
 // ---------- troll ----------
 const TW_FIELDS = [['maxs', 'Top speed', 0.2, 4], ['engine', 'Acceleration', 0.1, 6], ['brake', 'Braking', 0.1, 5], ['rev', 'Reverse speed', 0.1, 5], ['steer', 'Turning speed', 0.1, 4], ['grip', 'Grip', 0.05, 5], ['drift', 'Drift grip', 0.05, 5], ['dmom', 'Drift speed boost', 0, 6], ['hb', 'Handbrake grip', 0.05, 5], ['off', 'Off-road slowdown', 0, 5]];
 const TW_PRESETS = { Rocket: { maxs: 2.2, engine: 3 }, Snail: { maxs: 0.35, engine: 0.4 }, Ice: { grip: 0.15, drift: 0.25, hb: 0.3 }, 'Drift god': { drift: 1.8, dmom: 3, steer: 1.3 }, 'Shopping trolley': { steer: 0.35, grip: 0.4 }, 'No brakes': { brake: 0.1, rev: 0.1 }, Inverted: { inv: 1 } };
-let TRW = {};
-function trSummary(t) { return Object.keys(t || {}).filter(k => k === 'inv' || k === 'rl' || k === 'ban' ? t[k] : t[k] !== 1).map(k => k === 'inv' ? 'inverted steering' : k === 'rl' ? '🚀 rocket launcher' : k === 'ban' ? '⛔ banned' : ((TW_FIELDS.find(f => f[0] === k) || [k, k])[1] + ' ×' + t[k])).join(', ') || 'default'; }
+let TRW = {}, TRSEL = [];
+const TR_FLAGS = ['inv', 'rl', 'ban', 'rnc', 'raf', 'rc'];
+const TR_NAMES = { inv: 'inverted steering', rl: '🚀 rocket launcher', ban: '⛔ banned', rnc: '🔫 no rocket cooldown', raf: '💥 rocket auto-fire', rc: '🎮 remote control' };
+function trSummary(t) { return Object.keys(t || {}).filter(k => k !== 'rct' && (TR_FLAGS.includes(k) ? t[k] : t[k] !== 1)).map(k => TR_NAMES[k] || ((TW_FIELDS.find(f => f[0] === k) || [k, k])[1] + ' ×' + t[k])).join(', ') || 'default'; }
+const trToken = () => { const [a, b] = crypto.getRandomValues(new Uint32Array(2)); return 1e9 + a * 1000 + (b % 1000); };
+const trSelP = () => TRSEL.map(pid => PL.find(q => q.pid === pid)).filter(Boolean);
+function trChips() {
+  $('trChips').innerHTML = TRSEL.length ? trSelP().map(p => `<span class="trchip">${esc(plLabel(p))}<button data-rm="${esc(p.pid)}" title="Remove">×</button></span>`).join('') + (TRSEL.length > 1 ? '<button class="mini" id="trClr">Clear</button>' : '') : '';
+  $('trChips').style.display = TRSEL.length ? '' : 'none';
+  $('trChips').querySelectorAll('[data-rm]').forEach(b => b.onclick = () => trToggle(b.dataset.rm, false));
+  if ($('trClr')) $('trClr').onclick = () => { TRSEL = []; trSelChanged(2); };
+}
+function trMatches() {
+  const q = $('trQ').value.trim().toLowerCase(), P = PL.filter(p => p.pid);
+  return P.filter(p => !q || plLabel(p).toLowerCase().includes(q) || p.pid.toLowerCase().startsWith(q) || (p.key || '').toLowerCase().includes(q));
+}
+function trDrop() {
+  const M = trMatches(), show = M.slice(0, 100);
+  $('trDrop').innerHTML = `<div class="trhead"><button class="mini" id="trAll">Select all ${M.length} shown</button><span class="dim small">${M.length} match${M.length === 1 ? '' : 'es'}${M.length > 100 ? ', type to narrow down' : ''}</span></div>` +
+    (show.length ? show.map(p => `<label class="tropt"><input type="checkbox" data-trs="${esc(p.pid)}" ${TRSEL.includes(p.pid) ? 'checked' : ''}><b>${esc(plLabel(p))}</b>${p.tweaks && p.tweaks.ban ? '⛔' : ''}${p.tweaks && Object.keys(p.tweaks).some(k => k !== 'ban') ? '😈' : ''}<span class="dim mono small">${esc(p.pid.slice(0, 10))}</span></label>`).join('') : '<div class="tropt dim">No players match.</div>');
+  $('trDrop').querySelectorAll('[data-trs]').forEach(c => c.onchange = () => trToggle(c.dataset.trs, c.checked, true));
+  $('trAll').onclick = () => { const n = TRSEL.length; for (const p of M) if (!TRSEL.includes(p.pid)) TRSEL.push(p.pid); trSelChanged(n); };
+}
+function trToggle(pid, on, fromDrop) { const n = TRSEL.length; TRSEL = TRSEL.filter(x => x !== pid); if (on) TRSEL.push(pid); trSelChanged(n, fromDrop); }
+// one player picked: show their settings. Several: keep what is on screen and apply it to all of them.
+function trSelChanged(prev, keepDrop) {
+  const P = trSelP(); if (P.length === 1) TRW = Object.assign({}, P[0].tweaks || {}); else if (!P.length || prev === 0) TRW = {};
+  trChips(); if (!keepDrop && !$('trDrop').classList.contains('hidden')) trDrop(); trShow(true);
+}
 function trFill() {
-  const s = $('trP'), v = s.value, P = PL.filter(p => p.pid);
-  s.innerHTML = '<option value="">Choose a player…</option>' + P.map(p => `<option value="${esc(p.pid)}">${esc(plLabel(p))} · ${esc(p.pid.slice(0, 10))}${p.tweaks ? ' 😈' : ''}</option>`).join('');
-  if (v && P.some(p => p.pid === v)) s.value = v; trShow();
+  const P = PL.filter(p => p.pid); TRSEL = TRSEL.filter(pid => P.some(p => p.pid === pid)); trChips();
+  if (!$('trDrop').classList.contains('hidden')) trDrop();
+  if (TRSEL.length === 1) TRW = Object.assign({}, trSelP()[0].tweaks || {}); trShow(true);
   const T = P.filter(p => p.tweaks); $('trList').innerHTML = T.length ? T.map(p => `<div>😈 <b>${esc(plLabel(p))}</b> · ${esc(trSummary(p.tweaks))}</div>`).join('') : 'Nobody right now.';
 }
 function trShow(keep) {
-  const p = PL.find(q => q.pid === $('trP').value); if (!keep) TRW = Object.assign({}, (p && p.tweaks) || {}); const dis = p ? '' : 'disabled';
-  $('trBox').innerHTML = (p ? '' : '<p class="dim small">Pick a player above, or press Troll next to them on the Players tab.</p>') +
+  const P = trSelP(), dis = P.length ? '' : 'disabled'; if (!keep) TRW = P.length === 1 ? Object.assign({}, P[0].tweaks || {}) : {};
+  const chk = (id, k, label) => `<label class="chk"><input type="checkbox" id="${id}" ${TRW[k] ? 'checked' : ''} ${dis}> ${label}</label>`;
+  $('trBox').innerHTML = (P.length ? (P.length > 1 ? `<p class="dim small">Save applies these settings to all ${P.length} selected players (replacing what they have now).</p>` : '') : '<p class="dim small">Type a name above and tick the players you want, or press Troll next to them on the Players tab.</p>') +
     `<div class="row wrap"><span class="dim small">Presets:</span>${Object.keys(TW_PRESETS).map(k => `<button class="mini" data-trp="${esc(k)}" ${dis}>${esc(k)}</button>`).join('')}</div>` +
     TW_FIELDS.map(([k, label, lo, hi]) => { const v = TRW[k] ?? 1; return `<div class="row"><span style="width:160px">${label}</span><input type="range" min="${lo}" max="${hi}" step="0.05" value="${v}" data-tw="${k}" style="flex:1" ${dis}><span class="dim">×</span><input type="number" class="twn mono" step="any" min="0" value="${+v}" data-twn="${k}" title="Type any value, it is not limited to the slider" ${dis}></div>`; }).join('') +
-    `<label class="chk"><input type="checkbox" id="twInv" ${TRW.inv ? 'checked' : ''} ${dis}> Inverted steering (left is right)</label>` +
-    `<label class="chk"><input type="checkbox" id="twRl" ${TRW.rl ? 'checked' : ''} ${dis}> 🚀 Rocket launcher (they press X to fire; cars they hit explode and respawn)</label>`;
+    chk('twInv', 'inv', 'Inverted steering (left is right)') +
+    chk('twRl', 'rl', '🚀 Rocket launcher (they press X to fire; cars they hit explode and respawn)') +
+    chk('twRnc', 'rnc', '🔫 No rocket cooldown (tap X as fast as they like; turns the launcher on)') +
+    chk('twRaf', 'raf', '💥 Rocket auto-fire: hold X to shoot about 100 rockets a second (turns the launcher on)') +
+    chk('twRc', 'rc', '🎮 Allow remote control (you can steer their car, see below)');
   $('trBox').querySelectorAll('[data-tw]').forEach(r => r.oninput = () => { TRW[r.dataset.tw] = +r.value; $('trBox').querySelector('[data-twn="' + r.dataset.tw + '"]').value = +r.value; });
   $('trBox').querySelectorAll('[data-twn]').forEach(n => n.oninput = () => { const v = parseFloat(n.value); if (!isFinite(v) || v < 0) return; TRW[n.dataset.twn] = v; const r = $('trBox').querySelector('[data-tw="' + n.dataset.twn + '"]'); r.value = Math.min(+r.max, Math.max(+r.min, v)); });
-  $('twInv').onchange = e => { TRW.inv = e.target.checked ? 1 : 0; };
-  $('twRl').onchange = e => { TRW.rl = e.target.checked ? 1 : 0; };
-  $('trBox').querySelectorAll('[data-trp]').forEach(b => b.onclick = () => { TRW = Object.assign({}, TW_PRESETS[b.dataset.trp], TRW.rl ? { rl: 1 } : {}, TRW.ban ? { ban: 1 } : {}); trShow(true); });
-  $('trSave').disabled = $('trReset').disabled = !p;
+  const bind = (id, k, also) => $(id).onchange = e => { TRW[k] = e.target.checked ? 1 : 0; if (e.target.checked && also) { TRW[also] = 1; trShow(true); } };
+  bind('twInv', 'inv'); bind('twRl', 'rl'); bind('twRnc', 'rnc', 'rl'); bind('twRaf', 'raf', 'rl'); bind('twRc', 'rc');
+  $('trBox').querySelectorAll('[data-trp]').forEach(b => b.onclick = () => { const keepF = {}; for (const k of TR_FLAGS) if (TRW[k]) keepF[k] = 1; TRW = Object.assign({}, TW_PRESETS[b.dataset.trp], keepF); trShow(true); });
+  $('trSave').disabled = $('trReset').disabled = !P.length;
+}
+// the settings blob for one player: the sliders and ticks on screen, plus things that belong to that player (their ban, their remote-control token)
+function trData(p) {
+  const d = {}; for (const [k] of TW_FIELDS) if (TRW[k] != null && Math.abs(TRW[k] - 1) > 0.001) d[k] = Math.round(TRW[k] * 1000) / 1000;
+  for (const k of ['inv', 'rl', 'rnc', 'raf']) if (TRW[k]) d[k] = 1;
+  if (d.rnc || d.raf) d.rl = 1;
+  if (TRW.rc) { d.rc = 1; d.rct = (p.tweaks && p.tweaks.rct) || trToken(); }
+  if (p.tweaks && p.tweaks.ban) d.ban = 1; return d;
 }
 async function trSave() {
-  const pid = $('trP').value; if (!pid) return; const d = {};
-  for (const [k] of TW_FIELDS) if (TRW[k] != null && Math.abs(TRW[k] - 1) > 0.001) d[k] = Math.round(TRW[k] * 1000) / 1000; if (TRW.inv) d.inv = 1; if (TRW.rl) d.rl = 1; if (TRW.ban) d.ban = 1;
-  try { await rpc('admin_set_tweaks', { p_pid: pid, p_data: Object.keys(d).length ? d : null }); toast(Object.keys(d).length ? 'Saved. It applies to their car within about 15 seconds.' : 'Everything is default, so their tweaks were cleared.', 'ok'); await loadPlayers(); } catch (e) { toast(e.message, 'err'); }
+  const P = trSelP(); if (!P.length) return; let bad = 0, cleared = 0;
+  await Promise.all(P.map(p => { const d = trData(p); if (!Object.keys(d).length) cleared++; return rpc('admin_set_tweaks', { p_pid: p.pid, p_data: Object.keys(d).length ? d : null }).catch(() => bad++); }));
+  toast(bad ? `Saved ${P.length - bad}, ${bad} failed. Try again.` : cleared === P.length ? 'Everything is default, so their tweaks were cleared.' : `Saved for ${P.length} player${P.length > 1 ? 's' : ''}. It applies within about 15 seconds.`, bad ? 'err' : 'ok'); await loadPlayers();
 }
 async function trReset() {
-  const pid = $('trP').value; if (!pid) return;
-  try { const bp = PL.find(q => q.pid === pid); await rpc('admin_set_tweaks', { p_pid: pid, p_data: bp && bp.tweaks && bp.tweaks.ban ? { ban: 1 } : null }); TRW = {}; toast('Reset to default. Their car goes back to normal within about 15 seconds.', 'ok'); await loadPlayers(); } catch (e) { toast(e.message, 'err'); }
+  const P = trSelP(); if (!P.length) return; let bad = 0;
+  await Promise.all(P.map(p => rpc('admin_set_tweaks', { p_pid: p.pid, p_data: p.tweaks && p.tweaks.ban ? { ban: 1 } : null }).catch(() => bad++)));
+  TRW = {}; toast(bad ? `Reset ${P.length - bad}, ${bad} failed.` : 'Reset to default. Their cars go back to normal within about 15 seconds.', bad ? 'err' : 'ok'); await loadPlayers();
 }
 async function trResetAll() {
   const T = PL.filter(p => p.pid && p.tweaks && Object.keys(p.tweaks).some(k => k !== 'ban')); if (!T.length) return toast('Nobody is trolled right now.', 'ok');
@@ -250,6 +290,32 @@ async function trResetAll() {
   let bad = 0; await Promise.all(T.map(p => rpc('admin_set_tweaks', { p_pid: p.pid, p_data: p.tweaks.ban ? { ban: 1 } : null }).catch(() => bad++)));
   TRW = {}; toast(bad ? `Reset ${T.length - bad}, ${bad} failed. Try again.` : `All ${T.length} reset. Cars go back to normal within about 15 seconds.`, bad ? 'err' : 'ok'); await loadPlayers();
 }
+// ---------- remote control: your keys are sent live to each selected player's game ----------
+const RCD = { on: false, ch: [], ks: { l: 0, r: 0, u: 0, d: 0, h: 0 }, timer: 0, c: null };
+const RCK = { arrowleft: 'l', a: 'l', arrowright: 'r', d: 'r', arrowup: 'u', w: 'u', arrowdown: 'd', s: 'd', ' ': 'h' };
+function rcSend() { const pl = Object.assign({}, RCD.ks); for (const x of RCD.ch) try { x.ch.send({ type: 'broadcast', event: 'in', payload: pl }); } catch (e) { } document.querySelectorAll('.rckey').forEach(el => el.classList.toggle('on', !!RCD.ks[el.dataset.k])); }
+function rcStatus() { $('rcStat').innerHTML = RCD.ch.map(x => { const on = Object.keys(x.ch.presenceState()).length > 0; return `${on ? '🟢' : '⚪'} ${esc(x.name)}${on ? '' : ' (not in the game yet)'}`; }).join(' · '); }
+function rcKey(e) {
+  if (!RCD.on) return; const k = e.key.toLowerCase();
+  if (e.type === 'keydown' && k === 'escape') { e.preventDefault(); return rcStop(); }
+  if (/^(input|textarea|select)$/i.test(e.target.tagName) || !(k in RCK)) return;
+  e.preventDefault(); e.stopPropagation(); const v = e.type === 'keydown' ? 1 : 0; if (RCD.ks[RCK[k]] === v) return; RCD.ks[RCK[k]] = v; rcSend();
+}
+function rcStart() {
+  const P = trSelP(), ok = P.filter(p => p.tweaks && p.tweaks.rc && p.tweaks.rct);
+  if (!P.length) return toast('Pick the players you want to control first.', 'err');
+  if (!ok.length) return toast('Tick "Allow remote control" and press Save first, then Start.', 'err');
+  if (typeof supabase === 'undefined' || !DCFG.sbKey) return toast('Supabase is not set up on this dev site yet.', 'err');
+  if (!RCD.c) RCD.c = supabase.createClient(sbBase(), DCFG.sbKey.trim(), { auth: { persistSession: false, autoRefreshToken: false } });
+  RCD.ks = { l: 0, r: 0, u: 0, d: 0, h: 0 }; RCD.ch = ok.map(p => { const ch = RCD.c.channel('md-ctl-' + p.pid + '-' + p.tweaks.rct, { config: { broadcast: { self: false }, presence: { key: 'admin' } } }); ch.on('presence', { event: 'sync' }, rcStatus); ch.subscribe(); return { ch, name: plLabel(p) }; });
+  RCD.on = true; $('rcGo').textContent = 'Stop controlling'; $('rcPad').classList.remove('hidden'); rcStatus();
+  RCD.timer = setInterval(() => { rcSend(); rcStatus(); }, 250); toast(`Controlling ${ok.length} player${ok.length > 1 ? 's' : ''}. Use arrows/WASD + Space. Esc stops.`, 'ok');
+}
+function rcStop() {
+  if (!RCD.on) return; RCD.ks = { l: 0, r: 0, u: 0, d: 0, h: 0 }; rcSend(); clearInterval(RCD.timer); RCD.on = false;
+  for (const x of RCD.ch) try { x.ch.unsubscribe(); RCD.c.removeChannel(x.ch); } catch (e) { } RCD.ch = []; $('rcGo').textContent = 'Start controlling'; $('rcPad').classList.add('hidden'); $('rcStat').textContent = '';
+}
+addEventListener('keydown', rcKey, true); addEventListener('keyup', rcKey, true); addEventListener('blur', () => { if (RCD.on) { RCD.ks = { l: 0, r: 0, u: 0, d: 0, h: 0 }; rcSend(); } });
 // ---------- replay viewer (cheat checks) ----------
 let RP = null;
 async function openReplay(r) {
@@ -337,7 +403,8 @@ async function deployGame() {
   $('gOwn').onclick = async () => { const s = $('gSecret').value.trim(); if (s.length < 16) return $('gGenMsg').textContent = 'Use at least 16 characters (or press Generate).'; showSql(await sha(s)); $('gGenMsg').textContent = 'SQL made for the secret in the box above.'; };
   $('gCopy').onclick = () => navigator.clipboard.writeText($('gSql').value).then(() => toast('SQL copied. Paste it into Supabase → SQL Editor → Run.', 'ok'));
   document.querySelectorAll('.nv').forEach(b => b.onclick = () => setTab(b.dataset.tab));
-  $('lockBtn').onclick = lock; $('plGo').onclick = loadPlayers; $('plQ').oninput = renderPlayers; $('trP').onchange = () => trShow(); $('trLoad').onclick = loadPlayers; $('trSave').onclick = trSave; $('trReset').onclick = trReset; $('trResetAll').onclick = trResetAll; $('modal').onclick = e => { if (e.target.id === 'modal') closeModal(); }; $('plBody').onclick = plClick;
+  $('lockBtn').onclick = lock; $('plGo').onclick = loadPlayers; $('plQ').oninput = renderPlayers; $('trQ').onfocus = $('trQ').oninput = () => { $('trDrop').classList.remove('hidden'); trDrop(); }; $('trQ').onkeydown = e => { if (e.key === 'Escape') $('trDrop').classList.add('hidden'); if (e.key === 'Enter') { const m = trMatches()[0]; if (m) { trToggle(m.pid, !TRSEL.includes(m.pid)); e.preventDefault(); } } };
+  document.addEventListener('mousedown', e => { if (!$('trCombo').contains(e.target)) $('trDrop').classList.add('hidden'); }); $('rcGo').onclick = () => RCD.on ? rcStop() : rcStart(); $('trLoad').onclick = loadPlayers; $('trSave').onclick = trSave; $('trReset').onclick = trReset; $('trResetAll').onclick = trResetAll; $('modal').onclick = e => { if (e.target.id === 'modal') closeModal(); }; $('plBody').onclick = plClick;
   $('lbGo').onclick = loadLaps; $('lbT').onchange = loadLaps; $('lbBody').onclick = lbClick; $('lbClear').onclick = () => clearTrack(+$('lbT').value || 0); $('lbPurge').onclick = purgeAll; $('dpGo').onclick = deployGame; $('svGo').onclick = deployServer; $('svRepo').value = DCFG.srvRepo || ((DCFG.gameRepo || 'owner/x').split('/')[0] + '/minidrifters-server');
   $('ghTok').oninput = () => $('ghState').classList.toggle('on', !!$('ghTok').value.trim());
   const s = localStorage.getItem('md_dev_secret'); if (s && DCFG.sbUrl) { $('gSecret').value = s; $('gRem').checked = true; unlock(true); }

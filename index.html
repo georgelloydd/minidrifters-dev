@@ -80,10 +80,14 @@
   </section>
 
   <section class="tab hidden" id="tab-troll">
-    <div class="panel"><h2>Troll</h2><p class="dim small">Change one player's car handling. It reaches their game within about 15 seconds, even mid-race, and only affects them.</p>
-      <div class="row"><select id="trP" style="flex:1"></select><button id="trLoad" class="mini">Reload players</button></div>
+    <div class="panel"><h2>Troll</h2><p class="dim small">Change car handling for one or more players. It reaches their game within about 15 seconds, even mid-race, and only affects them.</p>
+      <div class="row" style="align-items:flex-start"><div id="trCombo" style="flex:1;min-width:240px;position:relative"><div id="trChips" class="row" style="margin:0 0 6px"></div><input id="trQ" placeholder="Type to search players, tick to select (you can pick several)" autocomplete="off" style="width:100%"><div id="trDrop" class="hidden trdrop"></div></div><button id="trLoad" class="mini">Reload players</button></div>
       <div id="trBox"></div>
       <div class="row"><button id="trSave" class="red">Save &amp; apply</button><button id="trReset" class="mini">Reset to default</button><button id="trResetAll" class="mini" style="margin-left:auto">Reset all</button></div>
+      <h2 style="margin-top:18px;font-size:16px">🎮 Remote control</h2>
+      <p class="dim small">Pick the players above, tick <b>Allow remote control</b>, press Save, then Start. Use the arrow keys or WASD and Space (handbrake). Your keys are added to theirs: if they hold right and you press left it cancels out, and when you let go they carry on going right. They keep full control of their own keys.</p>
+      <div class="row"><button id="rcGo" class="red">Start controlling</button><span id="rcStat" class="dim small"></span></div>
+      <div id="rcPad" class="row hidden" style="gap:10px"><span class="rckey" data-k="l">←</span><span class="rckey" data-k="u">↑</span><span class="rckey" data-k="d">↓</span><span class="rckey" data-k="r">→</span><span class="rckey" data-k="h" style="min-width:90px">SPACE</span><span class="dim small">Esc to stop</span></div>
       <h2 style="margin-top:18px;font-size:16px">Currently trolled</h2><div id="trList" class="dim small"></div></div>
   </section>
 

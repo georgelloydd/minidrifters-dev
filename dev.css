@@ -87,3 +87,9 @@ input[type=checkbox]:disabled{opacity:.4;cursor:default}
 .invChips{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px}.chip{display:inline-flex;align-items:center;gap:6px;background:#0e0e10;border:1px solid var(--line);border-radius:20px;padding:3px 6px 3px 4px;font:12px ui-monospace,Consolas,monospace}
 .chip i{width:16px;height:16px;border-radius:50%;border:1px solid rgba(255,255,255,.25)}.chip b{cursor:pointer;color:#8a8a94;padding:0 3px}.chip b:hover{color:var(--red)}
 #mBox input[type=color]{width:36px;height:30px;padding:0;border:1px solid var(--line);border-radius:6px;background:none;cursor:pointer}
+
+.trdrop{position:absolute;left:0;right:0;top:100%;z-index:30;max-height:300px;overflow:auto;background:var(--p);border:1px solid var(--line);border-radius:5px;margin-top:2px;box-shadow:0 8px 24px #000a}
+.tropt{display:flex;gap:8px;align-items:center;padding:6px 10px;cursor:pointer;border-bottom:1px solid #1d1d22}.tropt:hover{background:#1b1b20}.tropt input{margin:0}.tropt .dim{margin-left:auto}
+.trhead{display:flex;gap:6px;align-items:center;padding:6px 10px;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--p)}
+.trchip{display:inline-flex;gap:6px;align-items:center;background:#1b1b20;border:1px solid var(--line);border-left:3px solid var(--red);border-radius:5px;padding:3px 4px 3px 8px;font-weight:700;font-size:13px}.trchip button{padding:0 6px;border:none;background:transparent;color:#aaa;font-size:15px;line-height:1}
+.rckey{display:inline-flex;align-items:center;justify-content:center;min-width:44px;height:44px;border:1px solid var(--line);border-radius:7px;background:#1b1b20;font-weight:900;font-size:18px}.rckey.on{background:var(--red);border-color:var(--red);color:#fff}
