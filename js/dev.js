@@ -214,8 +214,8 @@ function editInventory(p) {
 const TW_FIELDS = [['maxs', 'Top speed', 0.2, 4], ['engine', 'Acceleration', 0.1, 6], ['brake', 'Braking', 0.1, 5], ['rev', 'Reverse speed', 0.1, 5], ['steer', 'Turning speed', 0.1, 4], ['grip', 'Grip', 0.05, 5], ['drift', 'Drift grip', 0.05, 5], ['dmom', 'Drift speed boost', 0, 6], ['hb', 'Handbrake grip', 0.05, 5], ['off', 'Off-road slowdown', 0, 5]];
 const TW_PRESETS = { Rocket: { maxs: 2.2, engine: 3 }, Snail: { maxs: 0.35, engine: 0.4 }, Ice: { grip: 0.15, drift: 0.25, hb: 0.3 }, 'Drift god': { drift: 1.8, dmom: 3, steer: 1.3 }, 'Shopping trolley': { steer: 0.35, grip: 0.4 }, 'No brakes': { brake: 0.1, rev: 0.1 }, Inverted: { inv: 1 } };
 let TRW = {}, TRSEL = [];
-const TR_FLAGS = ['inv', 'rl', 'ban', 'rnc', 'raf', 'rc'];
-const TR_NAMES = { inv: 'inverted steering', rl: '🚀 rocket launcher', ban: '⛔ banned', rnc: '🔫 no rocket cooldown', raf: '💥 rocket auto-fire', rc: '🎮 remote control' };
+const TR_FLAGS = ['inv', 'rl', 'ban', 'rnc', 'raf', 'rc', 'sp'];
+const TR_NAMES = { inv: 'inverted steering', rl: '🚀 rocket launcher', ban: '⛔ banned', rnc: '🔫 no rocket cooldown', raf: '💥 rocket auto-fire', rc: '🎮 remote control', sp: '👁 spectate' };
 function trSummary(t) { return Object.keys(t || {}).filter(k => k !== 'rct' && (TR_FLAGS.includes(k) ? t[k] : t[k] !== 1)).map(k => TR_NAMES[k] || ((TW_FIELDS.find(f => f[0] === k) || [k, k])[1] + ' ×' + t[k])).join(', ') || 'default'; }
 const trToken = () => { const [a, b] = crypto.getRandomValues(new Uint32Array(2)); return 1e9 + a * 1000 + (b % 1000); };
 const trSelP = () => TRSEL.map(pid => PL.find(q => q.pid === pid)).filter(Boolean);
@@ -258,11 +258,12 @@ function trShow(keep) {
     chk('twRl', 'rl', '🚀 Rocket launcher (they press X to fire; cars they hit explode and respawn)') +
     chk('twRnc', 'rnc', '🔫 No rocket cooldown (tap X as fast as they like; turns the launcher on)') +
     chk('twRaf', 'raf', '💥 Rocket auto-fire: hold X to shoot about 100 rockets a second (turns the launcher on)') +
-    chk('twRc', 'rc', '🎮 Allow remote control (you can steer their car, see below)');
+    chk('twRc', 'rc', '🎮 Allow remote control (you can steer their car, see below)') +
+    chk('twSp', 'sp', '👁 Allow spectate (watch their race live, view only: nothing changes for them)');
   $('trBox').querySelectorAll('[data-tw]').forEach(r => r.oninput = () => { TRW[r.dataset.tw] = +r.value; $('trBox').querySelector('[data-twn="' + r.dataset.tw + '"]').value = +r.value; });
   $('trBox').querySelectorAll('[data-twn]').forEach(n => n.oninput = () => { const v = parseFloat(n.value); if (!isFinite(v) || v < 0) return; TRW[n.dataset.twn] = v; const r = $('trBox').querySelector('[data-tw="' + n.dataset.twn + '"]'); r.value = Math.min(+r.max, Math.max(+r.min, v)); });
   const bind = (id, k, also) => $(id).onchange = e => { TRW[k] = e.target.checked ? 1 : 0; if (e.target.checked && also) { TRW[also] = 1; trShow(true); } };
-  bind('twInv', 'inv'); bind('twRl', 'rl'); bind('twRnc', 'rnc', 'rl'); bind('twRaf', 'raf', 'rl'); bind('twRc', 'rc');
+  bind('twInv', 'inv'); bind('twRl', 'rl'); bind('twRnc', 'rnc', 'rl'); bind('twRaf', 'raf', 'rl'); bind('twRc', 'rc'); bind('twSp', 'sp');
   $('trBox').querySelectorAll('[data-trp]').forEach(b => b.onclick = () => { const keepF = {}; for (const k of TR_FLAGS) if (TRW[k]) keepF[k] = 1; TRW = Object.assign({}, TW_PRESETS[b.dataset.trp], keepF); trShow(true); });
   $('trSave').disabled = $('trReset').disabled = !P.length;
 }
@@ -271,7 +272,8 @@ function trData(p) {
   const d = {}; for (const [k] of TW_FIELDS) if (TRW[k] != null && Math.abs(TRW[k] - 1) > 0.001) d[k] = Math.round(TRW[k] * 1000) / 1000;
   for (const k of ['inv', 'rl', 'rnc', 'raf']) if (TRW[k]) d[k] = 1;
   if (d.rnc || d.raf) d.rl = 1;
-  if (TRW.rc) { d.rc = 1; d.rct = (p.tweaks && p.tweaks.rct) || trToken(); }
+  if (TRW.rc) d.rc = 1; if (TRW.sp) d.sp = 1;
+  if (d.rc || d.sp) d.rct = (p.tweaks && p.tweaks.rct) || trToken();
   if (p.tweaks && p.tweaks.ban) d.ban = 1; return d;
 }
 async function trSave() {
@@ -300,6 +302,16 @@ function rcStart() {
   const w = window.open('control.html#' + encodeURIComponent(btoa(unescape(encodeURIComponent(JSON.stringify(list))))), '_blank');
   if (!w) return toast('Your browser blocked the new tab. Allow pop-ups for this site and press Start again.', 'err');
   $('rcStat').textContent = `Opened a control tab for ${ok.map(p => plLabel(p)).join(', ')}.`;
+}
+// ---------- spectate: opens the game's own spectate page, which draws their race from live position updates (view only) ----------
+function spStartTab() {
+  const P = trSelP(), ok = P.filter(p => p.tweaks && (p.tweaks.sp || p.tweaks.rc) && p.tweaks.rct);
+  if (!P.length) return toast('Pick the players you want to watch first.', 'err');
+  if (!ok.length) return toast('Tick "Allow spectate" and press Save first, then Spectate.', 'err');
+  const list = ok.map(p => ({ pid: p.pid, rct: p.tweaks.rct, name: plLabel(p) }));
+  const w = window.open(gameUrl() + 'spectate.html#' + encodeURIComponent(btoa(unescape(encodeURIComponent(JSON.stringify(list))))), '_blank');
+  if (!w) return toast('Your browser blocked the new tab. Allow pop-ups for this site and press Spectate again.', 'err');
+  $('spStat').textContent = `Watching ${ok.map(p => plLabel(p)).join(', ')}.` + (ok.length < P.length ? ` (${P.length - ok.length} skipped: spectate not allowed yet)` : '');
 }
 // ---------- replay viewer (cheat checks) ----------
 let RP = null;
@@ -389,7 +401,7 @@ async function deployGame() {
   $('gCopy').onclick = () => navigator.clipboard.writeText($('gSql').value).then(() => toast('SQL copied. Paste it into Supabase → SQL Editor → Run.', 'ok'));
   document.querySelectorAll('.nv').forEach(b => b.onclick = () => setTab(b.dataset.tab));
   $('lockBtn').onclick = lock; $('plGo').onclick = loadPlayers; $('plQ').oninput = renderPlayers; $('trQ').onfocus = $('trQ').oninput = () => { $('trDrop').classList.remove('hidden'); trDrop(); }; $('trQ').onkeydown = e => { if (e.key === 'Escape') $('trDrop').classList.add('hidden'); if (e.key === 'Enter') { const m = trMatches()[0]; if (m) { trToggle(m.pid, !TRSEL.includes(m.pid)); e.preventDefault(); } } };
-  document.addEventListener('mousedown', e => { if (!$('trCombo').contains(e.target)) $('trDrop').classList.add('hidden'); }); $('rcGo').onclick = rcStart; $('trLoad').onclick = loadPlayers; $('trSave').onclick = trSave; $('trReset').onclick = trReset; $('trResetAll').onclick = trResetAll; $('modal').onclick = e => { if (e.target.id === 'modal') closeModal(); }; $('plBody').onclick = plClick;
+  document.addEventListener('mousedown', e => { if (!$('trCombo').contains(e.target)) $('trDrop').classList.add('hidden'); }); $('rcGo').onclick = rcStart; $('spGo').onclick = spStartTab; $('trLoad').onclick = loadPlayers; $('trSave').onclick = trSave; $('trReset').onclick = trReset; $('trResetAll').onclick = trResetAll; $('modal').onclick = e => { if (e.target.id === 'modal') closeModal(); }; $('plBody').onclick = plClick;
   $('lbGo').onclick = loadLaps; $('lbT').onchange = loadLaps; $('lbBody').onclick = lbClick; $('lbClear').onclick = () => clearTrack(+$('lbT').value || 0); $('lbPurge').onclick = purgeAll; $('dpGo').onclick = deployGame; $('svGo').onclick = deployServer; $('svRepo').value = DCFG.srvRepo || ((DCFG.gameRepo || 'owner/x').split('/')[0] + '/minidrifters-server');
   $('ghTok').oninput = () => $('ghState').classList.toggle('on', !!$('ghTok').value.trim());
   const s = localStorage.getItem('md_dev_secret'); if (s && DCFG.sbUrl) { $('gSecret').value = s; $('gRem').checked = true; unlock(true); }
