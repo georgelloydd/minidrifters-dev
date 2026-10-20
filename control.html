@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Mini Drifters · Remote control</title>
+<style>
+:root{--red:#ff2a2a;--bg:#0a0a0c;--p:#141417;--line:#2a2a30;--txt:#e9e9ee}
+*{box-sizing:border-box}html,body{margin:0;height:100%;background:var(--bg);color:var(--txt);font:14px/1.4 'Segoe UI',Arial,sans-serif;overflow:hidden}
+#bar{display:flex;gap:12px;align-items:center;padding:8px 12px;background:var(--p);border-bottom:1px solid var(--line);height:44px}
+#bar b{font-style:italic;font-weight:900;letter-spacing:1px}#hint{color:#8a8a94;font-size:12px;flex:1}
+button{font:inherit;cursor:pointer;border:1px solid var(--line);background:#1b1b20;color:#eee;border-radius:5px;padding:5px 11px;font-weight:700}
+#grid{display:grid;gap:6px;padding:6px;height:calc(100% - 44px);background:var(--bg)}
+.tile{position:relative;background:#000;border:2px solid var(--line);border-radius:8px;overflow:hidden;min-height:0;cursor:pointer}.tile.f{border-color:var(--red)}
+.tile video{width:100%;height:100%;object-fit:contain;background:#000;display:block}
+.tag{position:absolute;left:10px;top:8px;background:rgba(10,10,12,.8);border:1px solid var(--line);border-left:3px solid var(--red);border-radius:6px;padding:3px 9px;font-weight:800;font-size:13px}
+.st{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;text-align:center;color:#9a9aa5;font-size:18px;pointer-events:none;padding:20px}.st.hide{display:none}
+.pad{position:absolute;left:10px;bottom:10px;display:flex;gap:5px;pointer-events:none}
+.k{min-width:34px;height:34px;display:flex;align-items:center;justify-content:center;border:1px solid #444;border-radius:6px;background:rgba(10,10,12,.75);font-weight:900}.k.on{background:var(--red);border-color:var(--red);color:#fff}
+#off{position:fixed;left:50%;top:60px;transform:translateX(-50%);background:var(--red);color:#fff;font-weight:900;padding:6px 16px;border-radius:6px;display:none;z-index:5}
+#msg{padding:30px;color:#ff6b6b}
+</style></head><body>
+<div id="bar"><b>🎮 REMOTE CONTROL</b><span id="hint">Click a screen to drive it · arrows or WASD + Space (handbrake) · 1-9 switch screen · F fullscreen · Esc hands off</span><label id="allw" style="display:none"><input type="checkbox" id="all"> Drive all</label><button id="fs">Fullscreen</button></div>
+<div id="off">HANDS OFF · press Esc to take control again</div>
+<div id="grid"></div>
+<script src="https://unpkg.com/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script>
+const $ = id => document.getElementById(id), vid = 'v' + Math.random().toString(36).slice(2, 9);
+const ICE = { iceServers: [{ urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] }] };
+let LIST = [], CFG = {}; try { LIST = JSON.parse(decodeURIComponent(escape(atob(decodeURIComponent(location.hash.slice(1)))))); } catch (e) { }
+try { CFG = JSON.parse(localStorage.getItem('md_dev_cfg') || '{}'); } catch (e) { }
+let url = (CFG.sbUrl || '').trim().replace(/\/+$/, '').replace(/\/rest\/v1$/, ''); if (url && !/^https?:/.test(url)) url = 'https://' + url;
+if (!LIST.length || !url || !CFG.sbKey) { document.body.innerHTML = '<div id="msg">Open this page with the Start button in the dev site\'s Troll tab (it needs the dev site\'s Supabase settings, which are saved in this browser).</div>'; throw new Error('no config'); }
+const client = supabase.createClient(url, CFG.sbKey.trim(), { auth: { persistSession: false, autoRefreshToken: false } });
+const KEYMAP = { arrowleft: 'l', a: 'l', arrowright: 'r', d: 'r', arrowup: 'u', w: 'u', arrowdown: 'd', s: 'd', ' ': 'h' }, ZERO = () => ({ l: 0, r: 0, u: 0, d: 0, h: 0 });
+const grid = $('grid'), cols = Math.ceil(Math.sqrt(LIST.length)); grid.style.gridTemplateColumns = 'repeat(' + cols + ',1fr)'; grid.style.gridTemplateRows = 'repeat(' + Math.ceil(LIST.length / cols) + ',1fr)';
+if (LIST.length > 1) $('allw').style.display = '';
+let focus = 0, off = false;
+const T = LIST.map((p, i) => {
+  const el = document.createElement('div'); el.className = 'tile'; el.innerHTML = '<video autoplay muted playsinline></video><div class="tag"></div><div class="st">Connecting…</div><div class="pad"><span class="k" data-k="l">←</span><span class="k" data-k="u">↑</span><span class="k" data-k="d">↓</span><span class="k" data-k="r">→</span><span class="k" data-k="h" style="min-width:70px">SPACE</span></div>';
+  el.querySelector('.tag').textContent = (LIST.length > 1 ? (i + 1) + ' · ' : '') + p.name; grid.appendChild(el); el.onclick = () => setFocus(i);
+  const t = { p, el, video: el.querySelector('video'), st: el.querySelector('.st'), ks: ZERO(), ch: null, sub: false, here: false, pc: null, pend: [], offerAt: 0 };
+  t.ch = client.channel('md-ctl-' + p.pid + '-' + p.rct, { config: { broadcast: { self: false }, presence: { key: 'admin-' + vid } } });
+  t.ch.on('broadcast', { event: 'sig' }, m => sig(t, m && m.payload));
+  t.ch.on('presence', { event: 'sync' }, () => { t.here = Object.keys(t.ch.presenceState()).includes('v'); status(t); });
+  t.ch.subscribe(s => { t.sub = s === 'SUBSCRIBED'; if (t.sub) want(t); });
+  return t;
+});
+function status(t) {
+  const live = t.pc && t.pc.connectionState === 'connected' && t.video.videoWidth > 0;
+  t.st.classList.toggle('hide', !!live); if (!live) t.st.textContent = !t.here ? '⚪ ' + t.p.name + ' is not in the game yet. Their game connects within about 15 seconds of Save.' : 'Connecting to their screen…';
+}
+function want(t) { if (!t.sub) return; const re = t.pc && t.pc.connectionState !== 'connected' && Date.now() - t.offerAt > 7000 ? 1 : 0; if (re) { try { t.pc.close(); } catch (e) { } t.pc = null; } t.ch.send({ type: 'broadcast', event: 'sig', payload: { k: 'want', from: vid, re } }); }
+function send(t, p) { t.ch.send({ type: 'broadcast', event: 'sig', payload: Object.assign({ from: vid }, p) }); }
+async function sig(t, p) {
+  if (!p || p.to !== vid) return;
+  if (p.k === 'offer' && p.sdp) {
+    if (t.pc) { try { t.pc.close(); } catch (e) { } } t.offerAt = Date.now(); t.pend = []; const pc = t.pc = new RTCPeerConnection(ICE);
+    pc.ontrack = e => { t.video.srcObject = e.streams[0]; t.video.play().catch(() => { }); };
+    pc.onicecandidate = e => { if (e.candidate) send(t, { k: 'ice', c: e.candidate.toJSON() }); };
+    pc.onconnectionstatechange = () => status(t); t.video.onplaying = t.video.onloadedmetadata = () => status(t);
+    await pc.setRemoteDescription(p.sdp); for (const c of t.pend.splice(0)) pc.addIceCandidate(c).catch(() => { });
+    const ans = await pc.createAnswer(); await pc.setLocalDescription(ans); send(t, { k: 'answer', sdp: { type: ans.type, sdp: ans.sdp } });
+  } else if (p.k === 'ice' && p.c) { if (t.pc && t.pc.remoteDescription) t.pc.addIceCandidate(p.c).catch(() => { }); else t.pend.push(p.c); }
+}
+setInterval(() => { for (const t of T) { want(t); status(t); } }, 3000);
+// ---- driving: your keys are added to theirs in their game ----
+function targets() { return $('all').checked ? T : [T[focus]]; }
+function pushKeys() { for (const t of T) { if (t.sub) t.ch.send({ type: 'broadcast', event: 'in', payload: off ? ZERO() : t.ks }); } const f = T[focus]; document.querySelectorAll('.tile').forEach((el, i) => { el.querySelectorAll('.k').forEach(k => k.classList.toggle('on', !off && !!T[i].ks[k.dataset.k])); el.classList.toggle('f', i === focus || $('all').checked); }); }
+function setFocus(i) { if (i === focus || i >= T.length) return; for (const t of T) t.ks = ZERO(); focus = i; pushKeys(); }
+function release() { for (const t of T) t.ks = ZERO(); pushKeys(); }
+function onKey(e) {
+  const k = e.key.toLowerCase(), dn = e.type === 'keydown';
+  if (dn && k === 'escape') { off = !off; $('off').style.display = off ? 'block' : 'none'; release(); return; }
+  if (dn && !e.repeat && k === 'f') { document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen().catch(() => { }); return; }
+  if (dn && /^[1-9]$/.test(k)) { setFocus(+k - 1); return; }
+  if (!(k in KEYMAP)) return; e.preventDefault(); if (off) return;
+  const v = dn ? 1 : 0; for (const t of targets()) t.ks[KEYMAP[k]] = v; pushKeys();
+}
+addEventListener('keydown', onKey); addEventListener('keyup', onKey); addEventListener('blur', release); $('all').onchange = () => { release(); };
+$('fs').onclick = () => document.documentElement.requestFullscreen().catch(() => { });
+setInterval(pushKeys, 250); pushKeys();
+addEventListener('beforeunload', () => { release(); });
+</script></body></html>

@@ -290,32 +290,17 @@ async function trResetAll() {
   let bad = 0; await Promise.all(T.map(p => rpc('admin_set_tweaks', { p_pid: p.pid, p_data: p.tweaks.ban ? { ban: 1 } : null }).catch(() => bad++)));
   TRW = {}; toast(bad ? `Reset ${T.length - bad}, ${bad} failed. Try again.` : `All ${T.length} reset. Cars go back to normal within about 15 seconds.`, bad ? 'err' : 'ok'); await loadPlayers();
 }
-// ---------- remote control: your keys are sent live to each selected player's game ----------
-const RCD = { on: false, ch: [], ks: { l: 0, r: 0, u: 0, d: 0, h: 0 }, timer: 0, c: null };
-const RCK = { arrowleft: 'l', a: 'l', arrowright: 'r', d: 'r', arrowup: 'u', w: 'u', arrowdown: 'd', s: 'd', ' ': 'h' };
-function rcSend() { const pl = Object.assign({}, RCD.ks); for (const x of RCD.ch) try { x.ch.send({ type: 'broadcast', event: 'in', payload: pl }); } catch (e) { } document.querySelectorAll('.rckey').forEach(el => el.classList.toggle('on', !!RCD.ks[el.dataset.k])); }
-function rcStatus() { $('rcStat').innerHTML = RCD.ch.map(x => { const on = Object.keys(x.ch.presenceState()).length > 0; return `${on ? '🟢' : '⚪'} ${esc(x.name)}${on ? '' : ' (not in the game yet)'}`; }).join(' · '); }
-function rcKey(e) {
-  if (!RCD.on) return; const k = e.key.toLowerCase();
-  if (e.type === 'keydown' && k === 'escape') { e.preventDefault(); return rcStop(); }
-  if (/^(input|textarea|select)$/i.test(e.target.tagName) || !(k in RCK)) return;
-  e.preventDefault(); e.stopPropagation(); const v = e.type === 'keydown' ? 1 : 0; if (RCD.ks[RCK[k]] === v) return; RCD.ks[RCK[k]] = v; rcSend();
-}
+// ---------- remote control: opens a new tab with their live game screen, where you drive ----------
 function rcStart() {
   const P = trSelP(), ok = P.filter(p => p.tweaks && p.tweaks.rc && p.tweaks.rct);
   if (!P.length) return toast('Pick the players you want to control first.', 'err');
   if (!ok.length) return toast('Tick "Allow remote control" and press Save first, then Start.', 'err');
   if (typeof supabase === 'undefined' || !DCFG.sbKey) return toast('Supabase is not set up on this dev site yet.', 'err');
-  if (!RCD.c) RCD.c = supabase.createClient(sbBase(), DCFG.sbKey.trim(), { auth: { persistSession: false, autoRefreshToken: false } });
-  RCD.ks = { l: 0, r: 0, u: 0, d: 0, h: 0 }; RCD.ch = ok.map(p => { const ch = RCD.c.channel('md-ctl-' + p.pid + '-' + p.tweaks.rct, { config: { broadcast: { self: false }, presence: { key: 'admin' } } }); ch.on('presence', { event: 'sync' }, rcStatus); ch.subscribe(); return { ch, name: plLabel(p) }; });
-  RCD.on = true; $('rcGo').textContent = 'Stop controlling'; $('rcPad').classList.remove('hidden'); rcStatus();
-  RCD.timer = setInterval(() => { rcSend(); rcStatus(); }, 250); toast(`Controlling ${ok.length} player${ok.length > 1 ? 's' : ''}. Use arrows/WASD + Space. Esc stops.`, 'ok');
+  const list = ok.map(p => ({ pid: p.pid, rct: p.tweaks.rct, name: plLabel(p) }));
+  const w = window.open('control.html#' + encodeURIComponent(btoa(unescape(encodeURIComponent(JSON.stringify(list))))), '_blank');
+  if (!w) return toast('Your browser blocked the new tab. Allow pop-ups for this site and press Start again.', 'err');
+  $('rcStat').textContent = `Opened a control tab for ${ok.map(p => plLabel(p)).join(', ')}.`;
 }
-function rcStop() {
-  if (!RCD.on) return; RCD.ks = { l: 0, r: 0, u: 0, d: 0, h: 0 }; rcSend(); clearInterval(RCD.timer); RCD.on = false;
-  for (const x of RCD.ch) try { x.ch.unsubscribe(); RCD.c.removeChannel(x.ch); } catch (e) { } RCD.ch = []; $('rcGo').textContent = 'Start controlling'; $('rcPad').classList.add('hidden'); $('rcStat').textContent = '';
-}
-addEventListener('keydown', rcKey, true); addEventListener('keyup', rcKey, true); addEventListener('blur', () => { if (RCD.on) { RCD.ks = { l: 0, r: 0, u: 0, d: 0, h: 0 }; rcSend(); } });
 // ---------- replay viewer (cheat checks) ----------
 let RP = null;
 async function openReplay(r) {
@@ -404,7 +389,7 @@ async function deployGame() {
   $('gCopy').onclick = () => navigator.clipboard.writeText($('gSql').value).then(() => toast('SQL copied. Paste it into Supabase → SQL Editor → Run.', 'ok'));
   document.querySelectorAll('.nv').forEach(b => b.onclick = () => setTab(b.dataset.tab));
   $('lockBtn').onclick = lock; $('plGo').onclick = loadPlayers; $('plQ').oninput = renderPlayers; $('trQ').onfocus = $('trQ').oninput = () => { $('trDrop').classList.remove('hidden'); trDrop(); }; $('trQ').onkeydown = e => { if (e.key === 'Escape') $('trDrop').classList.add('hidden'); if (e.key === 'Enter') { const m = trMatches()[0]; if (m) { trToggle(m.pid, !TRSEL.includes(m.pid)); e.preventDefault(); } } };
-  document.addEventListener('mousedown', e => { if (!$('trCombo').contains(e.target)) $('trDrop').classList.add('hidden'); }); $('rcGo').onclick = () => RCD.on ? rcStop() : rcStart(); $('trLoad').onclick = loadPlayers; $('trSave').onclick = trSave; $('trReset').onclick = trReset; $('trResetAll').onclick = trResetAll; $('modal').onclick = e => { if (e.target.id === 'modal') closeModal(); }; $('plBody').onclick = plClick;
+  document.addEventListener('mousedown', e => { if (!$('trCombo').contains(e.target)) $('trDrop').classList.add('hidden'); }); $('rcGo').onclick = rcStart; $('trLoad').onclick = loadPlayers; $('trSave').onclick = trSave; $('trReset').onclick = trReset; $('trResetAll').onclick = trResetAll; $('modal').onclick = e => { if (e.target.id === 'modal') closeModal(); }; $('plBody').onclick = plClick;
   $('lbGo').onclick = loadLaps; $('lbT').onchange = loadLaps; $('lbBody').onclick = lbClick; $('lbClear').onclick = () => clearTrack(+$('lbT').value || 0); $('lbPurge').onclick = purgeAll; $('dpGo').onclick = deployGame; $('svGo').onclick = deployServer; $('svRepo').value = DCFG.srvRepo || ((DCFG.gameRepo || 'owner/x').split('/')[0] + '/minidrifters-server');
   $('ghTok').oninput = () => $('ghState').classList.toggle('on', !!$('ghTok').value.trim());
   const s = localStorage.getItem('md_dev_secret'); if (s && DCFG.sbUrl) { $('gSecret').value = s; $('gRem').checked = true; unlock(true); }
