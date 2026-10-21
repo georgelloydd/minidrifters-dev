@@ -248,7 +248,7 @@ const TW_FIELDS = [['maxs', 'Top speed', 0.2, 4], ['engine', 'Acceleration', 0.1
 const TW_PRESETS = { Rocket: { maxs: 2.2, engine: 3 }, Snail: { maxs: 0.35, engine: 0.4 }, Ice: { grip: 0.15, drift: 0.25, hb: 0.3 }, 'Drift god': { drift: 1.8, dmom: 3, steer: 1.3 }, 'Shopping trolley': { steer: 0.35, grip: 0.4 }, 'No brakes': { brake: 0.1, rev: 0.1 }, Inverted: { inv: 1 } };
 let TRW = {}, TRSEL = [];
 const TR_FLAGS = ['inv', 'rl', 'ban', 'rnc', 'raf', 'rc', 'sp'];
-const TR_NAMES = { inv: 'inverted steering', rl: '🚀 rocket launcher', ban: '⛔ banned', rnc: '🔫 no rocket cooldown', raf: '💥 rocket auto-fire', rc: '🎮 remote control', sp: '👁 spectate' };
+const TR_NAMES = { inv: 'inverted steering', rl: '🚀 rocket launcher', ban: '⛔ banned', rnc: '🔫 no rocket cooldown', raf: '💥 rocket auto-fire', rc: '🎮 remote control', sp: '👁 spectate', kick: '🚪 kick sent' };
 function trSummary(t) { return Object.keys(t || {}).filter(k => k !== 'rct' && (TR_FLAGS.includes(k) ? t[k] : t[k] !== 1)).map(k => TR_NAMES[k] || ((TW_FIELDS.find(f => f[0] === k) || [k, k])[1] + ' ×' + t[k])).join(', ') || 'default'; }
 const trToken = () => { const [a, b] = crypto.getRandomValues(new Uint32Array(2)); return 1e9 + a * 1000 + (b % 1000); };
 const trSelP = () => TRSEL.map(pid => PL.find(q => q.pid === pid)).filter(Boolean);
@@ -279,26 +279,68 @@ function trFill() {
   const P = PL.filter(p => p.pid); TRSEL = TRSEL.filter(pid => P.some(p => p.pid === pid)); trChips();
   if (!$('trDrop').classList.contains('hidden')) trDrop();
   if (TRSEL.length === 1) TRW = Object.assign({}, trSelP()[0].tweaks || {}); trShow(true);
-  const T = P.filter(p => p.tweaks); $('trList').innerHTML = T.length ? T.map(p => `<div>😈 <b>${esc(plLabel(p))}</b> · ${esc(trSummary(p.tweaks))}</div>`).join('') : 'Nobody right now.';
+  const T = P.filter(p => p.tweaks && Object.keys(p.tweaks).some(k => k !== 'ban'));
+  $('trList').innerHTML = T.length ? T.map(p => `<div class="trrow"><b>${esc(plLabel(p))}</b>${p.tweaks.ban ? ' ⛔' : ''}<span class="dim">${esc(trSummary(p.tweaks))}</span><button class="mini" data-tre="${esc(p.pid)}">Edit</button><button class="mini" data-trx="${esc(p.pid)}">Reset</button></div>`).join('') : 'Nobody right now.';
+  $('trList').onclick = async e => { const b = e.target.closest('button'); if (!b) return;
+    if (b.dataset.tre) { TRSEL = [b.dataset.tre]; trSelChanged(0); window.scrollTo({ top: 0, behavior: 'smooth' }); }
+    if (b.dataset.trx) { const p = PL.find(q => q.pid === b.dataset.trx); if (!p) return; try { await rpc('admin_set_tweaks', { p_pid: p.pid, p_data: p.tweaks.ban ? { ban: 1 } : null }); toast(plLabel(p) + ' is back to normal.', 'ok'); await loadPlayers(); } catch (x) { toast(x.message, 'err'); } } };
 }
+const KICKV = { url: '', img: '', data: '', name: '' };
 function trShow(keep) {
   const P = trSelP(), dis = P.length ? '' : 'disabled'; if (!keep) TRW = P.length === 1 ? Object.assign({}, P[0].tweaks || {}) : {};
-  const chk = (id, k, label) => `<label class="chk"><input type="checkbox" id="${id}" ${TRW[k] ? 'checked' : ''} ${dis}> ${label}</label>`;
-  $('trBox').innerHTML = (P.length ? (P.length > 1 ? `<p class="dim small">Save applies these settings to all ${P.length} selected players (replacing what they have now).</p>` : '') : '<p class="dim small">Type a name above and tick the players you want, or press Troll next to them on the Players tab.</p>') +
-    `<div class="row wrap"><span class="dim small">Presets:</span>${Object.keys(TW_PRESETS).map(k => `<button class="mini" data-trp="${esc(k)}" ${dis}>${esc(k)}</button>`).join('')}</div>` +
-    TW_FIELDS.map(([k, label, lo, hi]) => { const v = TRW[k] ?? 1; return `<div class="row"><span style="width:160px">${label}</span><input type="range" min="${lo}" max="${hi}" step="0.05" value="${v}" data-tw="${k}" style="flex:1" ${dis}><span class="dim">×</span><input type="number" class="twn mono" step="any" min="0" value="${+v}" data-twn="${k}" title="Type any value, it is not limited to the slider" ${dis}></div>`; }).join('') +
-    chk('twInv', 'inv', 'Inverted steering (left is right)') +
-    chk('twRl', 'rl', '🚀 Rocket launcher (they press X to fire; cars they hit explode and respawn)') +
-    chk('twRnc', 'rnc', '🔫 No rocket cooldown (tap X as fast as they like; turns the launcher on)') +
-    chk('twRaf', 'raf', '💥 Rocket auto-fire: hold X to shoot about 100 rockets a second (turns the launcher on)') +
-    chk('twSp', 'sp', '👁 Allow spectate (you can watch their race; nothing changes for them)') +
-    chk('twRc', 'rc', '🎮 Allow remote control (you can watch and steer their car)');
-  $('trBox').querySelectorAll('[data-tw]').forEach(r => r.oninput = () => { TRW[r.dataset.tw] = +r.value; $('trBox').querySelector('[data-twn="' + r.dataset.tw + '"]').value = +r.value; });
-  $('trBox').querySelectorAll('[data-twn]').forEach(n => n.oninput = () => { const v = parseFloat(n.value); if (!isFinite(v) || v < 0) return; TRW[n.dataset.twn] = v; const r = $('trBox').querySelector('[data-tw="' + n.dataset.twn + '"]'); r.value = Math.min(+r.max, Math.max(+r.min, v)); });
-  const bind = (id, k, also) => $(id).onchange = e => { TRW[k] = e.target.checked ? 1 : 0; if (e.target.checked && also) { TRW[also] = 1; trShow(true); } };
+  const tg = (id, k, ic, name, sub) => `<label class="trtg${TRW[k] ? ' on' : ''}${dis ? ' off' : ''}"><input type="checkbox" id="${id}" ${TRW[k] ? 'checked' : ''} ${dis}><span class="ic">${ic}</span><span><b>${name}</b><i>${sub}</i></span></label>`;
+  const changed = TW_FIELDS.filter(([k]) => TRW[k] != null && Math.abs(TRW[k] - 1) > 0.001).length;
+  $('trBox').innerHTML = (P.length ? (P.length > 1 ? `<p class="trnote">Saving applies this to all <b>${P.length}</b> selected players and replaces what they have now.</p>` : '') : '<p class="trnote">Search above and tick one or more players to start. You can also press Edit in Currently trolled.</p>') +
+    `<div class="trsec"><div class="trh">🏎 Handling <span class="dim small">${changed ? changed + ' changed' : 'all normal'}</span></div>
+      <div class="row wrap"><button class="mini" data-trp="" ${dis}>Normal</button>${Object.keys(TW_PRESETS).map(k => `<button class="mini" data-trp="${esc(k)}" ${dis}>${esc(k)}</button>`).join('')}</div>
+      <details class="trdet"${changed ? ' open' : ''}><summary>Fine-tune sliders</summary><div class="trgrid">` +
+    TW_FIELDS.map(([k, label, lo, hi]) => { const v = TRW[k] ?? 1, c = Math.abs(v - 1) > 0.001; return `<div class="trsl${c ? ' ch' : ''}"><span>${label}</span><input type="range" min="${lo}" max="${hi}" step="0.05" value="${v}" data-tw="${k}" ${dis}><input type="number" class="twn mono" step="any" min="0" value="${+v}" data-twn="${k}" title="Any value, not limited to the slider" ${dis}></div>`; }).join('') +
+    `</div></details></div>
+    <div class="trsec"><div class="trh">💥 Powers</div><div class="trtgs">` +
+    tg('twInv', 'inv', '🔄', 'Inverted steering', 'Left is right') +
+    tg('twRl', 'rl', '🚀', 'Rocket launcher', 'X fires; hit cars explode') +
+    tg('twRnc', 'rnc', '🔫', 'No cooldown', 'Spam X (adds launcher)') +
+    tg('twRaf', 'raf', '🔥', 'Auto-fire', 'Hold X, ~100/s (adds launcher)') +
+    `</div></div>
+    <div class="trsec"><div class="trh">👁 Watch permissions</div><div class="trtgs">` +
+    tg('twSp', 'sp', '👁', 'Allow spectate', 'Nothing changes for them') +
+    tg('twRc', 'rc', '🎮', 'Allow remote control', 'You can steer their car') + `</div></div>`;
+  $('trBox').querySelectorAll('[data-tw]').forEach(r => r.oninput = () => { TRW[r.dataset.tw] = +r.value; $('trBox').querySelector('[data-twn="' + r.dataset.tw + '"]').value = +r.value; r.parentNode.classList.toggle('ch', Math.abs(+r.value - 1) > 0.001); });
+  $('trBox').querySelectorAll('[data-twn]').forEach(n => n.oninput = () => { const v = parseFloat(n.value); if (!isFinite(v) || v < 0) return; TRW[n.dataset.twn] = v; const r = $('trBox').querySelector('[data-tw="' + n.dataset.twn + '"]'); r.value = Math.min(+r.max, Math.max(+r.min, v)); n.parentNode.classList.toggle('ch', Math.abs(v - 1) > 0.001); });
+  const bind = (id, k, also) => $(id).onchange = e => { TRW[k] = e.target.checked ? 1 : 0; if (e.target.checked && also) TRW[also] = 1; if (!e.target.checked && k === 'rl') TRW.rnc = TRW.raf = 0; trShow(true); };
   bind('twInv', 'inv'); bind('twRl', 'rl'); bind('twRnc', 'rnc', 'rl'); bind('twRaf', 'raf', 'rl'); bind('twRc', 'rc'); bind('twSp', 'sp');
-  $('trBox').querySelectorAll('[data-trp]').forEach(b => b.onclick = () => { const keepF = {}; for (const k of TR_FLAGS) if (TRW[k]) keepF[k] = 1; TRW = Object.assign({}, TW_PRESETS[b.dataset.trp], keepF); trShow(true); });
+  $('trBox').querySelectorAll('[data-trp]').forEach(b => b.onclick = () => { const keepF = {}; for (const k of TR_FLAGS) if (TRW[k]) keepF[k] = 1; TRW = Object.assign({}, TW_PRESETS[b.dataset.trp] || {}, keepF); trShow(true); });
   $('trSave').disabled = $('trReset').disabled = !P.length;
+  $('trKick').innerHTML = `<div class="trsec kick"><div class="trh">🚪 Kick out <span class="dim small">one-off · closes their Mini Drifters tab</span></div>
+    <div class="krow"><span class="kl">↪ Send to a site</span><input id="kUrl" placeholder="https://example.com" value="${esc(KICKV.url)}" ${dis}><button class="red" id="kUrlGo" ${dis}>Redirect</button></div>
+    <div class="krow"><span class="kl">🖼 Show an image</span><input id="kImg" placeholder="Image link (https://…), or upload one" value="${esc(KICKV.data ? '📎 ' + KICKV.name : KICKV.img)}" ${KICKV.data ? 'readonly' : ''} ${dis}><button class="mini" id="kImgUp" ${dis}>${KICKV.data ? 'Remove' : 'Upload'}</button><input type="file" id="kImgF" accept="image/*" class="hidden"><button class="red" id="kImgGo" ${dis}>Show image</button></div>
+    <div id="kPrev">${KICKV.data || /^https?:\/\//i.test(KICKV.img) ? `<img src="${esc(KICKV.data || KICKV.img)}" alt="">` : ''}</div>
+    <p class="dim small">Fires once, within about 15 seconds (even mid-race). Their game tab is replaced by the site, or by your image full screen, and then tries to close itself. Press again to do it again.</p></div>`;
+  if (!P.length) return;
+  $('kUrl').oninput = e => KICKV.url = e.target.value;
+  $('kImg').oninput = e => { KICKV.img = e.target.value; const ok = /^https?:\/\//i.test(KICKV.img.trim()); $('kPrev').innerHTML = ok ? `<img src="${esc(KICKV.img.trim())}" alt="">` : ''; };
+  $('kImgUp').onclick = () => { if (KICKV.data) { KICKV.data = KICKV.name = ''; trShow(true); } else $('kImgF').click(); };
+  $('kImgF').onchange = e => { const f = e.target.files[0]; if (f) kickLoadFile(f); };
+  $('kUrlGo').onclick = () => trKick('url'); $('kImgGo').onclick = () => trKick('img');
+}
+function kickLoadFile(f) {
+  if (!/^image\//.test(f.type)) return toast('That file is not an image.', 'err');
+  const rd = new FileReader(); rd.onload = () => { const im = new Image(); im.onload = () => {
+    const sc = Math.min(1, 1280 / Math.max(im.width, im.height)), c = document.createElement('canvas'); c.width = Math.round(im.width * sc); c.height = Math.round(im.height * sc);
+    const g = c.getContext('2d'); g.fillStyle = '#000'; g.fillRect(0, 0, c.width, c.height); g.drawImage(im, 0, 0, c.width, c.height);
+    KICKV.data = /gif/.test(f.type) && f.size < 600000 ? rd.result : c.toDataURL('image/jpeg', 0.85); KICKV.name = f.name.slice(0, 40); trShow(true); };
+    im.onerror = () => toast('Could not read that image.', 'err'); im.src = rd.result; }; rd.readAsDataURL(f);
+}
+async function trKick(type) {
+  const P = trSelP(); if (!P.length) return toast('Pick the players first.', 'err');
+  let v = type === 'url' ? KICKV.url.trim() : (KICKV.data || KICKV.img.trim());
+  if (type === 'url') { if (v && !/^https?:\/\//i.test(v)) v = 'https://' + v; try { const u = new URL(v); if (!/^https?:$/.test(u.protocol) || !u.hostname.includes('.')) throw 0; } catch (e) { return toast('Enter a proper web address, like https://example.com', 'err'); } }
+  else if (!/^https?:\/\/\S+$/i.test(v) && !/^data:image\//.test(v)) return toast('Paste an image link (https://…) or upload an image.', 'err');
+  const names = P.map(plLabel).join(', ');
+  if (!confirm(`${type === 'url' ? 'Send ' + names + ' to ' + v : 'Show your image to ' + names}?\n\nTheir Mini Drifters tab gets closed/replaced within about 15 seconds.`)) return;
+  let bad = 0;
+  await Promise.all(P.map(p => { const d = Object.assign({}, p.tweaks || {}); d.kick = { t: type, v, tok: trToken() }; return rpc('admin_set_tweaks', { p_pid: p.pid, p_data: d }).catch(() => bad++); }));
+  toast(bad ? `Sent to ${P.length - bad}, ${bad} failed. Try again.` : `🚪 Sent. ${P.length > 1 ? P.length + ' players get' : names + ' gets'} kicked within about 15 seconds.`, bad ? 'err' : 'ok'); await loadPlayers();
 }
 // the settings blob for one player: the sliders and ticks on screen, plus things that belong to that player (their ban, their remote-control token)
 function trData(p) {
@@ -307,7 +349,9 @@ function trData(p) {
   if (d.rnc || d.raf) d.rl = 1;
   if (TRW.rc) d.rc = 1; if (TRW.sp) d.sp = 1;
   if (d.rc || d.sp) d.rct = (p.tweaks && p.tweaks.rct) || trToken();
-  if (p.tweaks && p.tweaks.ban) d.ban = 1; return d;
+  if (p.tweaks && p.tweaks.ban) d.ban = 1;
+  if (p.tweaks && p.tweaks.kick) d.kick = p.tweaks.kick; // keep a kick that has not fired yet
+  return d;
 }
 async function trSave() {
   const P = trSelP(); if (!P.length) return; let bad = 0, cleared = 0;

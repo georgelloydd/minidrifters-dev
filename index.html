@@ -80,16 +80,14 @@
   </section>
 
   <section class="tab hidden" id="tab-troll">
-    <div class="panel"><h2>Troll</h2><p class="dim small">Pick one or more players, choose what to change, then press Save &amp; apply. It reaches their game within about 15 seconds, even mid-race, and only affects them.</p>
+    <div class="panel trpanel"><h2>Troll</h2><p class="dim small">Pick players, change what you want, then <b>Save &amp; apply</b>. It reaches their game in about 15 seconds, even mid-race, and only affects them.</p>
       <div class="row" style="align-items:flex-start"><div id="trCombo" style="flex:1;min-width:240px;position:relative"><div id="trChips" class="row" style="margin:0 0 6px"></div><input id="trQ" placeholder="Type to search players, tick to select (you can pick several)" autocomplete="off" style="width:100%"><div id="trDrop" class="hidden trdrop"></div></div><button id="trLoad" class="mini">Reload players</button></div>
       <div id="trBox"></div>
-      <div class="row"><button id="trSave" class="red">Save &amp; apply</button><button id="trReset" class="mini">Reset to default</button><button id="trResetAll" class="mini" style="margin-left:auto">Reset all</button></div>
-      <h2 style="margin-top:18px;font-size:16px">👁 Watch &amp; 🎮 Drive</h2>
-      <p class="dim small">Pick players above, tick <b>Allow spectate</b> or <b>Allow remote control</b>, press <b>Save &amp; apply</b>, then:</p>
-      <ul class="dim small" style="margin:4px 0 8px 18px;padding:0"><li><b>Watch</b>: see their race live (their car, the cars around them, lap, time, position, speed). View only.</li><li><b>Drive</b>: the same view, plus arrows/WASD and Space steer their car. Your keys are added to theirs and they keep full control.</li></ul>
-      <p class="dim small">Both draw the race from live position updates, so they work on any network and reconnect by themselves. Players need the latest game (Deploy tab).</p>
-      <div class="row"><button id="wtGo" class="red">👁 Watch</button><button id="dvGo" class="red">🎮 Drive</button><span id="wtStat" class="dim small"></span></div>
-      <h2 style="margin-top:18px;font-size:16px">Currently trolled</h2><div id="trList" class="dim small"></div></div>
+      <div class="row trsave"><button id="trSave" class="red">Save &amp; apply</button><button id="trReset" class="mini">Reset selected</button><button id="trResetAll" class="mini" style="margin-left:auto">Reset everyone</button></div>
+      <div id="trKick"></div>
+      <div class="trsec"><div class="trh">👁 Watch &amp; 🎮 Drive</div><p class="dim small">Tick <b>Allow spectate</b> or <b>Allow remote control</b> above and Save first. Opens a live view of their race in a new tab. Drive adds your arrows/WASD + Space to their controls.</p>
+      <div class="row"><button id="wtGo" class="red">👁 Watch</button><button id="dvGo" class="red">🎮 Drive</button><span id="wtStat" class="dim small"></span></div></div>
+      <div class="trsec"><div class="trh">😈 Currently trolled</div><div id="trList" class="dim small"></div></div></div>
   </section>
 
   <section class="tab hidden" id="tab-lb">
