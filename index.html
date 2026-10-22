@@ -25,7 +25,7 @@
 <div id="app" class="hidden">
   <header>
     <div class="logo sm">MINI <span>DRIFTERS</span> <em id="devEm" style="cursor:pointer">DEV</em> <span id="devOnl" class="onlN"></span></div>
-    <nav><button class="nv" data-tab="tracks">Track builder</button><button class="nv" data-tab="players">Players</button><button class="nv hidden" data-tab="troll" id="nvTroll">Troll</button><button class="nv" data-tab="lb">Leaderboards</button><button class="nv" data-tab="review" id="nvReview">Review</button><button class="nv" data-tab="deploy">Deploy game</button></nav>
+    <nav><button class="nv" data-tab="dash">Dashboard</button><button class="nv" data-tab="tracks">Track builder</button><button class="nv" data-tab="players">Players</button><button class="nv hidden" data-tab="troll" id="nvTroll">Troll</button><button class="nv" data-tab="lb">Leaderboards</button><button class="nv" data-tab="review" id="nvReview">Review</button><button class="nv" data-tab="deploy">Deploy game</button></nav>
     <div class="hright"><a id="gameLink" target="_blank" class="dim small"></a><span id="ghState" class="dot" title="GitHub token entered"></span><input id="ghTok" type="password" placeholder="Paste GitHub token to publish" autocomplete="off" spellcheck="false"><button id="lockBtn" class="mini">Lock</button></div>
   </header>
 
@@ -72,11 +72,18 @@
     </aside>
   </section>
 
+  <section class="tab hidden" id="tab-dash">
+    <div class="panel"><div class="row" style="justify-content:space-between"><h2>Dashboard</h2><button id="dbGo" class="red">Refresh</button></div><div id="dbBody"><p class="dim">Open this tab to load the numbers.</p></div></div>
+  </section>
+
   <section class="tab hidden" id="tab-players">
     <div class="panel"><h2>Online now <span id="onN" class="dim small"></span></h2><div id="onList" class="dim small">Connecting… (needs Supabase set up on the Deploy tab)</div></div>
+    <div class="panel"><h2>Key requests <span id="krN" class="dim small"></span></h2><p class="dim small">Players who forgot their key ask from the Sign in box in the game. Pick their account and press <b>Approve</b>: their game signs them in automatically (it checks every 20 seconds while open, or next time they open it). Accounts used on the same browser are suggested first.</p>
+      <table><thead><tr><th>Asked as</th><th>Message</th><th>When</th><th>Account to give</th><th></th></tr></thead><tbody id="krBody"><tr><td colspan="5" class="dim">Loading…</td></tr></tbody></table></div>
     <div class="panel"><h2>Players</h2><p class="dim small">Every account key and saved profile. Edit a name, key or the raw profile, or delete a player completely (key, profile, troll settings and all their leaderboard times).</p>
-      <div class="row"><input id="plQ" placeholder="Filter by name, key or player ID" style="flex:1"><button id="plGo" class="red">Refresh</button><span id="plCount" class="dim small"></span></div>
-      <table><thead><tr><th>Name</th><th>Player key</th><th>Player ID</th><th>Profile</th><th>Last seen</th><th></th></tr></thead><tbody id="plBody"></tbody></table></div>
+      <div class="row"><input id="plQ" placeholder="Filter by name, key or player ID" style="flex:1"><button id="plGo" class="red">Refresh</button><button id="plMerge">Merge accounts</button><span id="plCount" class="dim small"></span></div>
+      <div id="plBulk" class="bulk hidden"></div>
+      <table><thead><tr><th style="width:24px"><input type="checkbox" id="plAll" title="Select everyone shown"></th><th>Name</th><th>Player key</th><th>Player ID</th><th>Profile</th><th>Last seen</th><th></th></tr></thead><tbody id="plBody"></tbody></table></div>
   </section>
 
   <section class="tab hidden" id="tab-troll">
